@@ -578,7 +578,7 @@ POS_CATEGORIES: dict[str, set[str]] = {
 SALIENT_WORDS = {
     "powerful", "significantly", "superhuman", "machine", "intelligence",
     "century", "learning", "scaled", "systems", "level",
-    "deceptive", "manipulative", "plans", "avoid",
+    "deceptive", "manipulative", "plans", "avoid", "think",
 }
 
 AI_WORDS = {"superhuman", "machine", "intelligence", "learning", "scaled", "up"}
