@@ -101,6 +101,9 @@ MEASURABLE_TYPES = {
     "end_of_text", "self_attention", "previous_token",
     "comma_attention", "period_attention",
     "few_previous_tokens", "entropy",
+    "noun_attention", "verb_attention", "adjective_attention",
+    "adverb_attention", "pronoun_attention", "preposition_attention",
+    "determiner_attention", "conjunction_attention",
 }
 
 LOAD_CODE = """\

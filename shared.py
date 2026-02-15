@@ -119,6 +119,38 @@ HEAD_TYPES: dict[str, tuple[str, str]] = {
         "Entropy %",
         "Normalized entropy of attention distribution (0%=concentrated on one token, 100%=uniform)",
     ),
+    "noun_attention": (
+        "Noun Attender",
+        "Fraction of attention directed to noun positions (NN, NNS, NNP, NNPS)",
+    ),
+    "verb_attention": (
+        "Verb Attender",
+        "Fraction of attention directed to verb positions (VB, VBD, VBG, VBN, VBP, VBZ, MD)",
+    ),
+    "adjective_attention": (
+        "Adjective Attender",
+        "Fraction of attention directed to adjective positions (JJ, JJR, JJS)",
+    ),
+    "adverb_attention": (
+        "Adverb Attender",
+        "Fraction of attention directed to adverb positions (RB, RBR, RBS, WRB)",
+    ),
+    "pronoun_attention": (
+        "Pronoun Attender",
+        "Fraction of attention directed to pronoun positions (PRP, WP, WDT)",
+    ),
+    "preposition_attention": (
+        "Preposition Attender",
+        "Fraction of attention directed to preposition/particle positions (IN, TO, RP)",
+    ),
+    "determiner_attention": (
+        "Determiner Attender",
+        "Fraction of attention directed to determiner positions (DT)",
+    ),
+    "conjunction_attention": (
+        "Conjunction Attender",
+        "Fraction of attention directed to conjunction positions (CC)",
+    ),
     "semantically_salient": (
         "Semantically Salient Attender",
         "Attends to content words with high semantic salience (scaled up, deceptive)",
@@ -200,6 +232,14 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
         ((0, 11), "partial"),
     ],
     "entropy": [],
+    "noun_attention": [],
+    "verb_attention": [],
+    "adjective_attention": [],
+    "adverb_attention": [],
+    "pronoun_attention": [],
+    "preposition_attention": [],
+    "determiner_attention": [],
+    "conjunction_attention": [],
     "semantically_salient": [
         ((0, 7), "half"),
         ((0, 11), "partial"),
@@ -237,6 +277,14 @@ TYPE_ENTROPY_KEYS: dict[str, str] = {
     "comma_attention": "comma_attention_entropy",
     "period_attention": "period_attention_entropy",
     "few_previous_tokens": "few_prev_tokens_entropy",
+    "noun_attention": "noun_attention_entropy",
+    "verb_attention": "verb_attention_entropy",
+    "adjective_attention": "adjective_attention_entropy",
+    "adverb_attention": "adverb_attention_entropy",
+    "pronoun_attention": "pronoun_attention_entropy",
+    "preposition_attention": "preposition_attention_entropy",
+    "determiner_attention": "determiner_attention_entropy",
+    "conjunction_attention": "conjunction_attention_entropy",
 }
 
 
@@ -495,6 +543,86 @@ def few_prev_tokens_entropy_pcts(cache: ActivationCache, k: int = 5, **kwargs):
     return _metric_entropy(cache, per_pos, **kwargs)
 
 
+# === POS-based attention metrics ===
+
+POS_CATEGORIES: dict[str, set[str]] = {
+    "noun": {"NN", "NNS", "NNP", "NNPS"},
+    "verb": {"VB", "VBD", "VBG", "VBN", "VBP", "VBZ", "MD"},
+    "adjective": {"JJ", "JJR", "JJS"},
+    "adverb": {"RB", "RBR", "RBS", "WRB"},
+    "pronoun": {"PRP", "PRP$", "WP", "WP$", "WDT"},
+    "preposition": {"IN", "TO", "RP"},
+    "determiner": {"DT"},
+    "conjunction": {"CC"},
+}
+
+
+def _get_pos_positions(str_tokens: list[str]) -> dict[str, list[int]]:
+    """Map POS categories to token position lists using NLTK POS tagging."""
+    import nltk
+    nltk.download("averaged_perceptron_tagger_eng", quiet=True)
+
+    # Reconstruct words from subword tokens
+    words: list[tuple[str, list[int]]] = []
+    current_word = ""
+    current_indices: list[int] = []
+
+    for i, tok in enumerate(str_tokens):
+        if i == 0:  # skip <|endoftext|>
+            continue
+        if tok.startswith(" "):
+            if current_indices:
+                words.append((current_word, current_indices))
+            current_word = tok[1:]
+            current_indices = [i]
+        elif tok[0].isalpha():
+            if current_indices:
+                current_word += tok
+                current_indices.append(i)
+            else:
+                current_word = tok
+                current_indices = [i]
+        else:
+            if current_indices:
+                words.append((current_word, current_indices))
+            current_word = tok
+            current_indices = [i]
+    if current_indices:
+        words.append((current_word, current_indices))
+
+    tagged = nltk.pos_tag([w for w, _ in words])
+
+    result: dict[str, list[int]] = {cat: [] for cat in POS_CATEGORIES}
+    for (_, indices), (_, pos) in zip(words, tagged):
+        for cat, pos_set in POS_CATEGORIES.items():
+            if pos in pos_set:
+                result[cat].extend(indices)
+                break
+    return result
+
+
+def attention_to_positions_pcts(
+    cache: ActivationCache, positions: list[int], **kwargs
+) -> list[tuple[int, int, float, str]]:
+    """Mean attention to given source positions, averaged over all dest positions."""
+    if not positions:
+        return []
+    return _compute_metric_pcts(
+        cache, lambda a: a[:, positions].sum(dim=-1).mean().item(), **kwargs
+    )
+
+
+def positions_attention_entropy_pcts(
+    cache: ActivationCache, positions: list[int], **kwargs
+) -> list[tuple[int, int, float, str]]:
+    """Entropy of attention to given positions across dest positions."""
+    if not positions:
+        return []
+    return _metric_entropy(
+        cache, lambda a: a[:, positions].sum(dim=-1), **kwargs
+    )
+
+
 def compute_head_raw_pcts(
     cache: ActivationCache,
     n_layers: int = 2,
@@ -532,6 +660,8 @@ def compute_all_type_metrics(
 
     Returns dict mapping (type_id, layer, head) -> pct.
     """
+    pos_positions = _get_pos_positions(str_tokens)
+
     metric_calls: dict[str, list[tuple[int, int, float, str]]] = {
         "end_of_text": attention_to_position_pct(cache, position=0),
         "self_attention": self_attention_pcts(cache),
@@ -547,6 +677,13 @@ def compute_all_type_metrics(
         "period_attention_entropy": token_attention_entropy_pcts(cache, str_tokens, "."),
         "few_prev_tokens_entropy": few_prev_tokens_entropy_pcts(cache, k=5),
     }
+    # POS-based metrics
+    for pos_cat, positions in pos_positions.items():
+        type_id = f"{pos_cat}_attention"
+        metric_calls[type_id] = attention_to_positions_pcts(cache, positions)
+        ent_key = TYPE_ENTROPY_KEYS.get(type_id)
+        if ent_key:
+            metric_calls[ent_key] = positions_attention_entropy_pcts(cache, positions)
     result = {}
     for type_id, entries in metric_calls.items():
         for layer, head, pct, _ in entries:
