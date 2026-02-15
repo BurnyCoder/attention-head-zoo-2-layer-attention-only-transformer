@@ -123,20 +123,50 @@ MEASURABLE_TYPES: dict[str, tuple[str, str, str, str]] = {
         "pct = t.tensor([attn[i, i-1].item() for i in range(1, attn.shape[0])]).mean().item() * 100",
     ),
     "comma_attention": (
-        "Comma Attention % Across All 24 Heads",
-        'Mean attention to comma (",") positions, averaged over all destination positions. '
+        "Comma Attention % Across All 24 Heads (To ,)",
+        'Mean attention TO comma (",") positions (comma as source), averaged over all destination positions. '
         "Sorted by raw % descending.",
-        'show_attention_to_token(cache, str_tokens, ",", "Comma")',
+        'show_attention_to_token(cache, str_tokens, ",", "To Comma")',
         'comma_pos = [i for i, tok in enumerate(str_tokens) if "," in tok]\n'
         "pct = get_attention_pattern(cache, layer={l}, head={h})[:, comma_pos].sum(dim=-1).mean().item() * 100",
     ),
+    "comma_attention_to": (
+        "Comma Attention % (To ,) Across All 24 Heads",
+        'Mean attention TO comma (",") positions (comma as source), averaged over all destination positions.',
+        'show_attention_to_token(cache, str_tokens, ",", "To Comma")',
+        'comma_pos = [i for i, tok in enumerate(str_tokens) if "," in tok]\n'
+        "pct = get_attention_pattern(cache, layer={l}, head={h})[:, comma_pos].sum(dim=-1).mean().item() * 100",
+    ),
+    "comma_attention_from": (
+        "Comma Attention % (From ,) Across All 24 Heads",
+        'Avg peak attention FROM comma (",") positions (comma as query/dest). '
+        "For each comma position, takes the max attention it pays to any source, then averages.",
+        'show_attention_from_token(cache, str_tokens, ",", "From Comma")',
+        'comma_pos = [i for i, tok in enumerate(str_tokens) if "," in tok]\n'
+        "pct = get_attention_pattern(cache, layer={l}, head={h})[comma_pos, :].max(dim=-1).values.mean().item() * 100",
+    ),
     "period_attention": (
-        "Period Attention % Across All 24 Heads",
-        'Mean attention to period (".") positions, averaged over all destination positions. '
+        "Period Attention % Across All 24 Heads (To .)",
+        'Mean attention TO period (".") positions (period as source), averaged over all destination positions. '
         "Sorted by raw % descending.",
-        'show_attention_to_token(cache, str_tokens, ".", "Period")',
+        'show_attention_to_token(cache, str_tokens, ".", "To Period")',
         'period_pos = [i for i, tok in enumerate(str_tokens) if "." in tok]\n'
         "pct = get_attention_pattern(cache, layer={l}, head={h})[:, period_pos].sum(dim=-1).mean().item() * 100",
+    ),
+    "period_attention_to": (
+        "Period Attention % (To .) Across All 24 Heads",
+        'Mean attention TO period (".") positions (period as source), averaged over all destination positions.',
+        'show_attention_to_token(cache, str_tokens, ".", "To Period")',
+        'period_pos = [i for i, tok in enumerate(str_tokens) if "." in tok]\n'
+        "pct = get_attention_pattern(cache, layer={l}, head={h})[:, period_pos].sum(dim=-1).mean().item() * 100",
+    ),
+    "period_attention_from": (
+        "Period Attention % (From .) Across All 24 Heads",
+        'Avg peak attention FROM period (".") positions (period as query/dest). '
+        "For each period position, takes the max attention it pays to any source, then averages.",
+        'show_attention_from_token(cache, str_tokens, ".", "From Period")',
+        'period_pos = [i for i, tok in enumerate(str_tokens) if "." in tok]\n'
+        "pct = get_attention_pattern(cache, layer={l}, head={h})[period_pos, :].max(dim=-1).values.mean().item() * 100",
     ),
     "few_previous_tokens": (
         "Few Previous Tokens Attention % Across All 24 Heads",
@@ -358,8 +388,10 @@ for layer in range(model.cfg.n_layers):
 PER_HEAD_TABLE_CODE = """\
 # Per-head summary: classification + types with activity levels + raw %
 raw_pcts = compute_head_raw_pcts(cache)
-comma_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ",")}
-period_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
+to_comma = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ",")}
+from_comma = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ",")}
+to_period = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
+from_period = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ".")}
 few_prev_pcts = {(l, h): pct for l, h, pct, _ in few_prev_tokens_pcts(cache, k=5)}
 
 rows = []
@@ -378,8 +410,10 @@ for layer in range(2):
             "EOT %": round(pcts["eot"], 1),
             "Self %": round(pcts["self_attn"], 1),
             "Prev %": round(pcts["prev_token"], 1),
-            "Comma %": round(comma_pcts[(layer, head)], 1),
-            "Period %": round(period_pcts[(layer, head)], 1),
+            "To , %": round(to_comma[(layer, head)], 1),
+            "From , %": round(from_comma[(layer, head)], 1),
+            "To . %": round(to_period[(layer, head)], 1),
+            "From . %": round(from_period[(layer, head)], 1),
             "Prev5 %": round(few_prev_pcts[(layer, head)], 1),
         })
 df = pd.DataFrame(rows)
@@ -389,16 +423,22 @@ PER_TYPE_TABLE_CODE = """\
 # Per-type summary: sorted by number of heads descending
 # Compute all measurable metrics
 raw_pcts = compute_head_raw_pcts(cache)
-comma_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ",")}
-period_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
+to_comma = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ",")}
+from_comma = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ",")}
+to_period = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
+from_period = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ".")}
 few_prev_pcts = {(l, h): pct for l, h, pct, _ in few_prev_tokens_pcts(cache, k=5)}
 
 def get_metric(type_id, l, h):
     if type_id == "end_of_text": return raw_pcts[(l, h)]["eot"]
     if type_id == "self_attention": return raw_pcts[(l, h)]["self_attn"]
     if type_id == "previous_token": return raw_pcts[(l, h)]["prev_token"]
-    if type_id == "comma_attention": return comma_pcts[(l, h)]
-    if type_id == "period_attention": return period_pcts[(l, h)]
+    if type_id == "comma_attention_to": return to_comma[(l, h)]
+    if type_id == "comma_attention_from": return from_comma[(l, h)]
+    if type_id == "comma_attention": return to_comma[(l, h)]
+    if type_id == "period_attention_to": return to_period[(l, h)]
+    if type_id == "period_attention_from": return from_period[(l, h)]
+    if type_id == "period_attention": return to_period[(l, h)]
     if type_id == "few_previous_tokens": return few_prev_pcts[(l, h)]
     return None
 
@@ -431,18 +471,24 @@ itshow(df, paging=False, classes="display compact")"""
 HEATMAP_CODE = """\
 import plotly.graph_objects as go
 
-# Compute raw % for all 6 measurable types
+# Compute raw % for all measurable types
 raw_pcts = compute_head_raw_pcts(cache)
-comma_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ",")}
-period_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
+to_comma = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ",")}
+from_comma = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ",")}
+to_period = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
+from_period = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ".")}
 few_prev_pcts = {(l, h): pct for l, h, pct, _ in few_prev_tokens_pcts(cache, k=5)}
 
 def get_raw_pct(tid, l, h):
     if tid == "end_of_text": return raw_pcts[(l, h)]["eot"]
     if tid == "self_attention": return raw_pcts[(l, h)]["self_attn"]
     if tid == "previous_token": return raw_pcts[(l, h)]["prev_token"]
-    if tid == "comma_attention": return comma_pcts[(l, h)]
-    if tid == "period_attention": return period_pcts[(l, h)]
+    if tid == "comma_attention_to": return to_comma[(l, h)]
+    if tid == "comma_attention_from": return from_comma[(l, h)]
+    if tid == "comma_attention": return to_comma[(l, h)]
+    if tid == "period_attention_to": return to_period[(l, h)]
+    if tid == "period_attention_from": return from_period[(l, h)]
+    if tid == "period_attention": return to_period[(l, h)]
     if tid == "few_previous_tokens": return few_prev_pcts[(l, h)]
     return None
 
@@ -458,17 +504,18 @@ for tid in type_ids:
     row = []
     text_row = []
     heads_map = {(l, h): act for (l, h), act in TYPE_TO_HEADS.get(tid, [])}
+    is_measurable = get_raw_pct(tid, 0, 0) is not None
     for l in range(2):
         for h in range(12):
-            if (l, h) in heads_map:
+            if is_measurable:
+                # For measurable types, show raw % for ALL heads
                 raw = get_raw_pct(tid, l, h)
-                if raw is not None:
-                    row.append(raw)
-                    text_row.append(f"{raw:.0f}")
-                else:
-                    val = ACTIVITY_MIDPOINT[heads_map[(l, h)]]
-                    row.append(val)
-                    text_row.append(f"~{val}")
+                row.append(raw)
+                text_row.append(f"{raw:.0f}")
+            elif (l, h) in heads_map:
+                val = ACTIVITY_MIDPOINT[heads_map[(l, h)]]
+                row.append(val)
+                text_row.append(f"~{val}")
             else:
                 row.append(0)
                 text_row.append("")

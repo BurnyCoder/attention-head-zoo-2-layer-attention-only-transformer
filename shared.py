@@ -105,11 +105,27 @@ HEAD_TYPES: dict[str, tuple[str, str]] = {
     ),
     "period_attention": (
         "Period Attender",
-        "Attends to period (.) tokens",
+        "Attends to period (.) tokens (combined: to + from)",
+    ),
+    "period_attention_to": (
+        "Period Attender (To .)",
+        "Attention flowing TO period positions (period as source, averaged over all dest)",
+    ),
+    "period_attention_from": (
+        "Period Attender (From .)",
+        "Attention flowing FROM period positions (period as dest/query, avg peak attention)",
     ),
     "comma_attention": (
         "Comma Attender",
-        "Attends to comma (,) tokens",
+        "Attends to comma (,) tokens (combined: to + from)",
+    ),
+    "comma_attention_to": (
+        "Comma Attender (To ,)",
+        "Attention flowing TO comma positions (comma as source, averaged over all dest)",
+    ),
+    "comma_attention_from": (
+        "Comma Attender (From ,)",
+        "Attention flowing FROM comma positions (comma as dest/query, avg peak attention)",
     ),
     "self_attention": (
         "Self-Attender",
@@ -186,10 +202,14 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
     "period_attention": [
         ((1, 5), "half"),
     ],
+    "period_attention_to": [],
+    "period_attention_from": [],
     "comma_attention": [
         ((0, 5), "full"),
         ((0, 2), "partial"),
     ],
+    "comma_attention_to": [],
+    "comma_attention_from": [],
     "self_attention": [
         ((1, 2), "partial"),
         ((0, 9), "partial"),
