@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Attention head zoo: manually cataloguing and classifying the functional roles of all 24 attention heads in a 2-layer attention-only transformer (from [ARENA 3.0 exercises](https://github.com/callummcdougall/ARENA_3.0)). Uses TransformerLens and circuitsvis for activation analysis and visualization.
+Attention head zoo: manually cataloguing and classifying the functional roles of all 24 attention heads in a 2-layer attention-only transformer. Uses TransformerLens and circuitsvis for activation analysis and visualization.
 
 ## Project Structure
 
