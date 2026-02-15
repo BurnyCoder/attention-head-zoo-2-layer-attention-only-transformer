@@ -339,12 +339,8 @@ from itables import init_notebook_mode, show as itshow
 init_notebook_mode(all_interactive=True)
 from shared import (
     load_model, run_and_cache, get_attention_pattern,
-    show_head_pattern, show_attention_tables, show_attention_to_position,
-    show_self_attention_pcts, show_prev_token_pcts,
-    show_attention_to_token, show_attention_from_token,
-    show_few_prev_tokens_pcts,
-    compute_head_raw_pcts, attention_to_token_pcts, attention_from_token_pcts,
-    few_prev_tokens_pcts,
+    show_head_pattern, show_attention_tables,
+    compute_all_type_metrics,
     HEAD_CLASSIFICATIONS, HEAD_TYPES, TYPE_TO_HEADS,
     ACTIVITY_LABELS, ACTIVITY_ORDER,
     get_head_types, TEXT,
@@ -387,23 +383,7 @@ for layer in range(model.cfg.n_layers):
 
 PER_HEAD_TABLE_CODE = """\
 # Per-head summary: classification + types with activity levels + raw %
-raw_pcts = compute_head_raw_pcts(cache)
-to_comma = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ",")}
-from_comma = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ",")}
-to_period = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
-from_period = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ".")}
-few_prev_pcts = {(l, h): pct for l, h, pct, _ in few_prev_tokens_pcts(cache, k=5)}
-
-def get_type_pct(tid, l, h):
-    if tid == "end_of_text": return raw_pcts[(l, h)]["eot"]
-    if tid == "self_attention": return raw_pcts[(l, h)]["self_attn"]
-    if tid == "previous_token": return raw_pcts[(l, h)]["prev_token"]
-    if tid in ("comma_attention", "comma_attention_to"): return to_comma[(l, h)]
-    if tid == "comma_attention_from": return from_comma[(l, h)]
-    if tid in ("period_attention", "period_attention_to"): return to_period[(l, h)]
-    if tid == "period_attention_from": return from_period[(l, h)]
-    if tid == "few_previous_tokens": return few_prev_pcts[(l, h)]
-    return None
+tm = compute_all_type_metrics(cache, str_tokens)
 
 rows = []
 for layer in range(2):
@@ -411,64 +391,41 @@ for layer in range(2):
         head_types = get_head_types(layer, head)
         type_parts = []
         for tid, act in head_types:
-            pct_val = get_type_pct(tid, layer, head)
+            pct_val = tm.get((tid, layer, head))
             if pct_val is not None:
                 type_parts.append(f"{HEAD_TYPES[tid][0]} ({pct_val:.1f}%)")
             else:
                 type_parts.append(f"{HEAD_TYPES[tid][0]} ({ACTIVITY_LABELS[act]})")
         types_str = ", ".join(type_parts) if type_parts else "\\u2014"
-        pcts = raw_pcts[(layer, head)]
-        rows.append({
+        row = {
             "Head": f"L{layer}H{head}",
             "Classification": HEAD_CLASSIFICATIONS.get((layer, head), "\\u2014"),
             "Types": types_str,
-            "EOT %": round(pcts["eot"], 1),
-            "Self %": round(pcts["self_attn"], 1),
-            "Prev %": round(pcts["prev_token"], 1),
-            "To , %": round(to_comma[(layer, head)], 1),
-            "From , %": round(from_comma[(layer, head)], 1),
-            "To . %": round(to_period[(layer, head)], 1),
-            "From . %": round(from_period[(layer, head)], 1),
-            "Prev5 %": round(few_prev_pcts[(layer, head)], 1),
-        })
+        }
+        # Add a column for every measurable type
+        for tid in HEAD_TYPES:
+            if (tid, 0, 0) in tm:
+                row[HEAD_TYPES[tid][0]] = round(tm[(tid, layer, head)], 1)
+        rows.append(row)
 df = pd.DataFrame(rows)
 itshow(df, paging=False, classes="display compact")"""
 
 PER_TYPE_TABLE_CODE = """\
 # Per-type summary: sorted by number of heads descending
-# Compute all measurable metrics
-raw_pcts = compute_head_raw_pcts(cache)
-to_comma = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ",")}
-from_comma = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ",")}
-to_period = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
-from_period = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ".")}
-few_prev_pcts = {(l, h): pct for l, h, pct, _ in few_prev_tokens_pcts(cache, k=5)}
-
-def get_metric(type_id, l, h):
-    if type_id == "end_of_text": return raw_pcts[(l, h)]["eot"]
-    if type_id == "self_attention": return raw_pcts[(l, h)]["self_attn"]
-    if type_id == "previous_token": return raw_pcts[(l, h)]["prev_token"]
-    if type_id == "comma_attention_to": return to_comma[(l, h)]
-    if type_id == "comma_attention_from": return from_comma[(l, h)]
-    if type_id == "comma_attention": return to_comma[(l, h)]
-    if type_id == "period_attention_to": return to_period[(l, h)]
-    if type_id == "period_attention_from": return from_period[(l, h)]
-    if type_id == "period_attention": return to_period[(l, h)]
-    if type_id == "few_previous_tokens": return few_prev_pcts[(l, h)]
-    return None
+tm = compute_all_type_metrics(cache, str_tokens)
 
 rows = []
 for type_id, heads_list in TYPE_TO_HEADS.items():
     display_name, description = HEAD_TYPES[type_id]
-    has_metric = get_metric(type_id, heads_list[0][0][0], heads_list[0][0][1]) is not None
+    has_metric = (type_id, 0, 0) in tm
     if has_metric:
         sorted_heads = sorted(
             heads_list,
-            key=lambda x: get_metric(type_id, x[0][0], x[0][1]),
+            key=lambda x, tid=type_id: tm.get((tid, x[0][0], x[0][1]), 0),
             reverse=True,
         )
         heads_str = ", ".join(
-            f"L{l}H{h} ({get_metric(type_id, l, h):.1f}%)"
+            f"L{l}H{h} ({tm[(type_id, l, h)]:.1f}%)"
             for (l, h), act in sorted_heads
         )
     else:
@@ -486,26 +443,7 @@ itshow(df, paging=False, classes="display compact")"""
 HEATMAP_CODE = """\
 import plotly.graph_objects as go
 
-# Compute raw % for all measurable types
-raw_pcts = compute_head_raw_pcts(cache)
-to_comma = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ",")}
-from_comma = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ",")}
-to_period = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
-from_period = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ".")}
-few_prev_pcts = {(l, h): pct for l, h, pct, _ in few_prev_tokens_pcts(cache, k=5)}
-
-def get_raw_pct(tid, l, h):
-    if tid == "end_of_text": return raw_pcts[(l, h)]["eot"]
-    if tid == "self_attention": return raw_pcts[(l, h)]["self_attn"]
-    if tid == "previous_token": return raw_pcts[(l, h)]["prev_token"]
-    if tid == "comma_attention_to": return to_comma[(l, h)]
-    if tid == "comma_attention_from": return from_comma[(l, h)]
-    if tid == "comma_attention": return to_comma[(l, h)]
-    if tid == "period_attention_to": return to_period[(l, h)]
-    if tid == "period_attention_from": return from_period[(l, h)]
-    if tid == "period_attention": return to_period[(l, h)]
-    if tid == "few_previous_tokens": return few_prev_pcts[(l, h)]
-    return None
+tm = compute_all_type_metrics(cache, str_tokens)
 
 # Map activity levels to midpoint % for non-measurable types
 ACTIVITY_MIDPOINT = {"full": 95, "fullish": 75, "half": 50, "partial": 25, "almost_none": 5}
@@ -519,12 +457,11 @@ for tid in type_ids:
     row = []
     text_row = []
     heads_map = {(l, h): act for (l, h), act in TYPE_TO_HEADS.get(tid, [])}
-    is_measurable = get_raw_pct(tid, 0, 0) is not None
+    is_measurable = (tid, 0, 0) in tm
     for l in range(2):
         for h in range(12):
             if is_measurable:
-                # For measurable types, show raw % for ALL heads
-                raw = get_raw_pct(tid, l, h)
+                raw = tm[(tid, l, h)]
                 row.append(raw)
                 text_row.append(f"{raw:.0f}")
             elif (l, h) in heads_map:

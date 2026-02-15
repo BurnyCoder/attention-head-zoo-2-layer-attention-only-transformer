@@ -461,6 +461,33 @@ def compute_head_raw_pcts(
     return results
 
 
+def compute_all_type_metrics(
+    cache: ActivationCache,
+    str_tokens: list[str],
+) -> dict[tuple[str, int, int], float]:
+    """Compute raw % for all measurable type_ids for all heads.
+
+    Returns dict mapping (type_id, layer, head) -> pct.
+    """
+    metric_calls: dict[str, list[tuple[int, int, float, str]]] = {
+        "end_of_text": attention_to_position_pct(cache, position=0),
+        "self_attention": self_attention_pcts(cache),
+        "previous_token": prev_token_pcts(cache),
+        "comma_attention": attention_to_token_pcts(cache, str_tokens, ","),
+        "comma_attention_to": attention_to_token_pcts(cache, str_tokens, ","),
+        "comma_attention_from": attention_from_token_pcts(cache, str_tokens, ","),
+        "period_attention": attention_to_token_pcts(cache, str_tokens, "."),
+        "period_attention_to": attention_to_token_pcts(cache, str_tokens, "."),
+        "period_attention_from": attention_from_token_pcts(cache, str_tokens, "."),
+        "few_previous_tokens": few_prev_tokens_pcts(cache, k=5),
+    }
+    result = {}
+    for type_id, entries in metric_calls.items():
+        for layer, head, pct, _ in entries:
+            result[(type_id, layer, head)] = pct
+    return result
+
+
 # === Visualization ===
 def show_head_pattern(
     str_tokens: list[str],
