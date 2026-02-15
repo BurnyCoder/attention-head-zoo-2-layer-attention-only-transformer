@@ -308,7 +308,7 @@ from shared import (
     show_head_pattern, show_attention_tables, show_attention_to_position,
     show_self_attention_pcts, show_prev_token_pcts,
     show_attention_to_token, show_few_prev_tokens_pcts,
-    compute_head_raw_pcts,
+    compute_head_raw_pcts, attention_to_token_pcts, few_prev_tokens_pcts,
     HEAD_CLASSIFICATIONS, HEAD_TYPES, TYPE_TO_HEADS,
     ACTIVITY_LABELS, ACTIVITY_ORDER,
     get_head_types, TEXT,
@@ -352,10 +352,13 @@ for layer in range(model.cfg.n_layers):
 PER_HEAD_TABLE_CODE = """\
 # Per-head summary: classification + types with activity levels + raw %
 raw_pcts = compute_head_raw_pcts(cache)
+comma_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ",")}
+period_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
+few_prev_pcts = {(l, h): pct for l, h, pct, _ in few_prev_tokens_pcts(cache, k=5)}
 
 lines = [
-    "| Head | Classification | Types | EOT % | Self % | Prev % |",
-    "|------|---------------|-------|-------|--------|--------|",
+    "| Head | Classification | Types | EOT % | Self % | Prev % | Comma % | Period % | Prev5 % |",
+    "|------|---------------|-------|-------|--------|--------|---------|----------|---------|",
 ]
 for layer in range(2):
     for head in range(12):
@@ -372,19 +375,28 @@ for layer in range(2):
         pcts = raw_pcts[(layer, head)]
         lines.append(
             f"| **{name}** | {classification} | {types_str} "
-            f"| {pcts['eot']:.1f}% | {pcts['self_attn']:.1f}% | {pcts['prev_token']:.1f}% |"
+            f"| {pcts['eot']:.1f}% | {pcts['self_attn']:.1f}% | {pcts['prev_token']:.1f}% "
+            f"| {comma_pcts[(layer, head)]:.1f}% | {period_pcts[(layer, head)]:.1f}% "
+            f"| {few_prev_pcts[(layer, head)]:.1f}% |"
         )
 display(Markdown("\\n".join(lines)))"""
 
 PER_TYPE_TABLE_CODE = """\
 # Per-type summary: sorted by number of heads descending
-# Map type_ids to measurable raw % metrics
+# Compute all measurable metrics
 raw_pcts = compute_head_raw_pcts(cache)
-TYPE_METRIC = {
-    "end_of_text": "eot",
-    "self_attention": "self_attn",
-    "previous_token": "prev_token",
-}
+comma_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ",")}
+period_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
+few_prev_pcts = {(l, h): pct for l, h, pct, _ in few_prev_tokens_pcts(cache, k=5)}
+
+def get_metric(type_id, l, h):
+    if type_id == "end_of_text": return raw_pcts[(l, h)]["eot"]
+    if type_id == "self_attention": return raw_pcts[(l, h)]["self_attn"]
+    if type_id == "previous_token": return raw_pcts[(l, h)]["prev_token"]
+    if type_id == "comma_attention": return comma_pcts[(l, h)]
+    if type_id == "period_attention": return period_pcts[(l, h)]
+    if type_id == "few_previous_tokens": return few_prev_pcts[(l, h)]
+    return None
 
 type_summary = []
 for type_id, heads_list in TYPE_TO_HEADS.items():
@@ -398,16 +410,15 @@ lines = [
     "|------|-------------|---------|---------------------|",
 ]
 for type_id, display_name, description, heads_list in type_summary:
-    metric_key = TYPE_METRIC.get(type_id)
-    if metric_key:
-        # Sort by raw % descending when available
+    has_metric = get_metric(type_id, heads_list[0][0][0], heads_list[0][0][1]) is not None
+    if has_metric:
         sorted_heads = sorted(
             heads_list,
-            key=lambda x: raw_pcts[(x[0][0], x[0][1])][metric_key],
+            key=lambda x: get_metric(type_id, x[0][0], x[0][1]),
             reverse=True,
         )
         heads_str = ", ".join(
-            f"L{l}H{h} ({raw_pcts[(l, h)][metric_key]:.1f}%)"
+            f"L{l}H{h} ({get_metric(type_id, l, h):.1f}%)"
             for (l, h), act in sorted_heads
         )
     else:
