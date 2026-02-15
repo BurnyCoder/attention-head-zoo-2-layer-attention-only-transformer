@@ -159,6 +159,10 @@ HEAD_TYPES: dict[str, tuple[str, str]] = {
         "AI Word Attender",
         "Fraction of attention directed to AI/ML-related words (superhuman, machine, intelligence, learning, scaled, up)",
     ),
+    "spooky_word_attention": (
+        "Spooky Word Attender",
+        "Fraction of attention directed to spooky/deceptive words (deceptive, manipulative)",
+    ),
     "semantically_salient": (
         "Semantically Salient Attender",
         "Attends to content words with high semantic salience (scaled up, deceptive)",
@@ -250,6 +254,7 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
     "conjunction_attention": [],
     "salient_word_attention": [],
     "ai_word_attention": [],
+    "spooky_word_attention": [],
     "semantically_salient": [
         ((0, 7), "half"),
         ((0, 11), "partial"),
@@ -297,6 +302,7 @@ TYPE_ENTROPY_KEYS: dict[str, str] = {
     "conjunction_attention": "conjunction_attention_entropy",
     "salient_word_attention": "salient_word_attention_entropy",
     "ai_word_attention": "ai_word_attention_entropy",
+    "spooky_word_attention": "spooky_word_attention_entropy",
 }
 
 
@@ -577,6 +583,8 @@ SALIENT_WORDS = {
 
 AI_WORDS = {"superhuman", "machine", "intelligence", "learning", "scaled", "up"}
 
+SPOOKY_WORDS = {"deceptive", "manipulative"}
+
 
 def _reconstruct_words(str_tokens: list[str]) -> list[tuple[str, list[int]]]:
     """Reconstruct words from subword tokens.
@@ -721,6 +729,7 @@ def compute_all_type_metrics(
     for type_id, positions in [
         ("salient_word_attention", salient_positions),
         ("ai_word_attention", ai_positions),
+        ("spooky_word_attention", _get_word_set_positions(str_tokens, SPOOKY_WORDS)),
     ]:
         metric_calls[type_id] = attention_to_positions_pcts(cache, positions)
         ent_key = TYPE_ENTROPY_KEYS.get(type_id)
