@@ -11,25 +11,37 @@ A toy 2-layer attention-only transformer designed for interpretability:
 - **Positional embeddings**: Shortformer-style (added to Q/K only, not V) — the residual stream cannot directly encode position
 - **Pretrained weights**: [`callummcdougall/attn_only_2L_half`](https://huggingface.co/callummcdougall/attn_only_2L_half)
 
+## Project Structure
+
+- `attention-head-zoo-2-layer-attention-only-transformer.ipynb` — main notebook with per-layer visualizations and a programmatic summary (per-head classification table with raw %, per-type summary, head-type activity heatmap)
+- `heads/` — 24 per-head notebooks (`l0h0.ipynb` through `l1h11.ipynb`), each with the head's classification, attention pattern visualizations, and top-25 source/destination token tables
+- `types/` — 15 per-type notebooks (e.g. `glue_words.ipynb`, `end_of_text.ipynb`), each showing all heads exhibiting that type sorted by activity level
+- `shared.py` — shared data structures (classifications, type mappings, activity levels) and utility functions (model loading, attention extraction, visualization, tables)
+- `generate_notebooks.py` — generates all 39 head/type notebooks from data in `shared.py`
+
 ## Attention Head Types Found
 
-From analyzing attention patterns on natural language text:
+15 types identified from analyzing attention patterns on natural language text. Each head can exhibit multiple types at different activity levels (full 90-100%, fullish 60-90%, half 40-60%, partial 10-40%).
 
-| Type | Count | Description |
+| Type | Heads | Description |
 |------|-------|-------------|
-| Glue word attender | 5x | Attends to function words like "are", "and", "if", "that", "were", "or" |
-| BOS/end-of-text attender | 6x | Attends primarily to the beginning-of-sequence token |
-| Previous token head | 3x | Attends to the immediately preceding token |
-| Few previous tokens head | 2x | Attends to a small window of preceding tokens |
-| Certainty/questioning attender | 3x | Attends to words expressing certainty or uncertainty ("likely", "think", "known") |
-| Comma attender | 2x | Attends to comma tokens |
-| Self-attender | 2x | Attends primarily to the current token position |
-| Semantically salient attender | 2x | Attends to content words with high semantic salience |
-| Glue-to-content connector | 3x | Connects function words to semantically rich content words |
-| Context aggregator | 1x | Aggregates broad context into content-rich positions |
-| Related token connector | 1x | Connects semantically related tokens (e.g., "machine" ↔ "intelligence") |
+| Glue Word Attender | 6 | Attends to function words like "are", "and", "if", "that", "were", "or" |
+| End-of-Text Attender | 11 | Attends primarily to the beginning-of-sequence / end-of-text token |
+| Previous Token Head | 4 | Attends to the immediately preceding token |
+| Few Previous Tokens Head | 2 | Attends to a small window of preceding tokens |
+| Certainty/Questioning Attender | 3 | Attends to words expressing certainty or uncertainty ("likely", "think", "known") |
+| Comma Attender | 2 | Attends to comma tokens |
+| Period Attender | 1 | Attends to period (.) tokens |
+| Self-Attender | 3 | Attends primarily to the current token position |
+| Semantically Salient Attender | 2 | Attends to content words with high semantic salience |
+| Context Aggregator | 2 | Aggregates broad context into content-rich positions |
+| Dot-EOT Quirk | 1 | Period (.) token attends to end-of-text token |
+| Glue-to-Semantic Connector | 3 | Connects function words to semantically rich content words |
+| Glue-to-Glue Connector | 1 | Connects function words to other function words |
+| Related Previous Token | 1 | Attends to the previous token when directly semantically related |
+| Semantic Connector | 1 | Connects semantically related tokens (e.g., "machine" and "intelligence") |
 
-Many heads exhibit multiple behaviors (partial overlap between categories).
+Many heads exhibit multiple behaviors at different activity levels.
 
 ## Setup
 
@@ -37,4 +49,8 @@ Many heads exhibit multiple behaviors (partial overlap between categories).
 uv venv && uv sync
 ```
 
-Then run the notebook `attention-head-zoo-2-layer-attention-only-transformer.ipynb` with the `.venv` Python kernel.
+Run any notebook with the `.venv` Python kernel. To regenerate the head/type notebooks after editing `shared.py`:
+
+```bash
+.venv/bin/python generate_notebooks.py
+```
