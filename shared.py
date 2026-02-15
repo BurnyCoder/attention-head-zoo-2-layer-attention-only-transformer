@@ -288,9 +288,23 @@ def show_head_pattern(
     layer: int,
     head: int,
 ) -> None:
-    """Display the attention pattern heatmap for a single head."""
+    """Display attention pattern visualizations for a single head."""
     attention = get_attention_pattern(cache, layer, head)
-    display(cv.attention.attention_pattern(tokens=str_tokens, attention=attention))
+    # Interactive token-highlighting view (click tokens to see attention flow)
+    display(
+        cv.attention.attention_pattern(
+            tokens=str_tokens,
+            attention=attention,
+        )
+    )
+    # Attention head thumbnail + detail view
+    display(
+        cv.attention.attention_heads(
+            tokens=str_tokens,
+            attention=attention.unsqueeze(0),
+            attention_head_names=[f"L{layer}H{head}"],
+        )
+    )
 
 
 def attention_pairs_table(
