@@ -355,16 +355,22 @@ rows = []
 for type_id, heads_list in TYPE_TO_HEADS.items():
     display_name, description = HEAD_TYPES[type_id]
     has_metric = (type_id, 0, 0) in tm
+    ent_key = TYPE_ENTROPY_KEYS.get(type_id)
     if has_metric:
         sorted_heads = sorted(
             heads_list,
             key=lambda x, tid=type_id: tm.get((tid, x[0][0], x[0][1]), 0),
             reverse=True,
         )
-        heads_str = ", ".join(
-            f"L{l}H{h} ({tm[(type_id, l, h)]:.1f}%)"
-            for (l, h), act in sorted_heads
-        )
+        parts = []
+        for (l, h), act in sorted_heads:
+            pct = tm[(type_id, l, h)]
+            ent_val = tm.get((ent_key, l, h)) if ent_key else None
+            if ent_val is not None:
+                parts.append(f"L{l}H{h} ({pct:.1f}%, ent {ent_val:.1f}%)")
+            else:
+                parts.append(f"L{l}H{h} ({pct:.1f}%)")
+        heads_str = ", ".join(parts)
     else:
         sorted_heads = sorted(heads_list, key=lambda x: ACTIVITY_ORDER.get(x[1], 0), reverse=True)
         heads_str = ", ".join(f"L{l}H{h} ({act})" for (l, h), act in sorted_heads)
