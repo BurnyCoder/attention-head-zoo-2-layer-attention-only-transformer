@@ -281,6 +281,30 @@ def get_attention_pattern(
     return cache["pattern", layer][head]
 
 
+def _classify_pct(pct: float) -> str:
+    """Classify a percentage into an activity level string."""
+    if pct >= 90:
+        return "full"
+    elif pct >= 60:
+        return "fullish"
+    elif pct >= 40:
+        return "half"
+    elif pct >= 10:
+        return "partial"
+    elif pct >= 0.1:
+        return "almost none"
+    else:
+        return "-"
+
+
+def _show_metric_table(results: list[tuple[int, int, float, str]], label: str) -> None:
+    """Print a sorted table of (layer, head, pct, level) tuples."""
+    print(f"{'Head':<8} {label + ' %':>12}  {'Level'}")
+    print("-" * 35)
+    for layer, head, pct, level in results:
+        print(f"L{layer}H{head:<5} {pct:>11.2f}%  {level}")
+
+
 def attention_to_position_pct(
     cache: ActivationCache,
     position: int,
@@ -296,30 +320,112 @@ def attention_to_position_pct(
         for head in range(n_heads):
             attention = get_attention_pattern(cache, layer, head)
             pct = attention[:, position].mean().item() * 100
-            if pct >= 90:
-                level = "full"
-            elif pct >= 60:
-                level = "fullish"
-            elif pct >= 40:
-                level = "half"
-            elif pct >= 10:
-                level = "partial"
-            elif pct >= 0.1:
-                level = "almost none"
-            else:
-                level = "-"
-            results.append((layer, head, pct, level))
+            results.append((layer, head, pct, _classify_pct(pct)))
     results.sort(key=lambda x: x[2], reverse=True)
     return results
 
 
 def show_attention_to_position(cache: ActivationCache, position: int, label: str = "position") -> None:
     """Print a table of mean attention % to a source position for all heads."""
-    results = attention_to_position_pct(cache, position)
-    print(f"{'Head':<8} {label + ' %':>12}  {'Level'}")
-    print("-" * 35)
-    for layer, head, pct, level in results:
-        print(f"L{layer}H{head:<5} {pct:>11.2f}%  {level}")
+    _show_metric_table(attention_to_position_pct(cache, position), label)
+
+
+def self_attention_pcts(
+    cache: ActivationCache,
+    n_layers: int = 2,
+    n_heads: int = 12,
+) -> list[tuple[int, int, float, str]]:
+    """Compute mean self-attention % (diagonal) for all heads."""
+    results = []
+    for layer in range(n_layers):
+        for head in range(n_heads):
+            attention = get_attention_pattern(cache, layer, head)
+            pct = t.diagonal(attention).mean().item() * 100
+            results.append((layer, head, pct, _classify_pct(pct)))
+    results.sort(key=lambda x: x[2], reverse=True)
+    return results
+
+
+def show_self_attention_pcts(cache: ActivationCache) -> None:
+    """Print self-attention % table for all heads."""
+    _show_metric_table(self_attention_pcts(cache), "Self-attn")
+
+
+def prev_token_pcts(
+    cache: ActivationCache,
+    n_layers: int = 2,
+    n_heads: int = 12,
+) -> list[tuple[int, int, float, str]]:
+    """Compute mean previous-token attention % for all heads."""
+    results = []
+    for layer in range(n_layers):
+        for head in range(n_heads):
+            attention = get_attention_pattern(cache, layer, head)
+            n = attention.shape[0]
+            pct = (
+                t.tensor([attention[i, i - 1].item() for i in range(1, n)]).mean().item() * 100
+                if n > 1 else 0.0
+            )
+            results.append((layer, head, pct, _classify_pct(pct)))
+    results.sort(key=lambda x: x[2], reverse=True)
+    return results
+
+
+def show_prev_token_pcts(cache: ActivationCache) -> None:
+    """Print previous-token attention % table for all heads."""
+    _show_metric_table(prev_token_pcts(cache), "Prev-tok")
+
+
+def attention_to_token_pcts(
+    cache: ActivationCache,
+    str_tokens: list[str],
+    token: str,
+    n_layers: int = 2,
+    n_heads: int = 12,
+) -> list[tuple[int, int, float, str]]:
+    """Compute mean attention % to positions containing a specific token string."""
+    positions = [i for i, tok in enumerate(str_tokens) if token in tok]
+    if not positions:
+        return []
+    results = []
+    for layer in range(n_layers):
+        for head in range(n_heads):
+            attention = get_attention_pattern(cache, layer, head)
+            pct = attention[:, positions].sum(dim=-1).mean().item() * 100
+            results.append((layer, head, pct, _classify_pct(pct)))
+    results.sort(key=lambda x: x[2], reverse=True)
+    return results
+
+
+def show_attention_to_token(
+    cache: ActivationCache, str_tokens: list[str], token: str, label: str
+) -> None:
+    """Print attention-to-token % table for all heads."""
+    _show_metric_table(attention_to_token_pcts(cache, str_tokens, token), label)
+
+
+def few_prev_tokens_pcts(
+    cache: ActivationCache,
+    k: int = 5,
+    n_layers: int = 2,
+    n_heads: int = 12,
+) -> list[tuple[int, int, float, str]]:
+    """Compute mean attention % to the k preceding tokens (excluding self)."""
+    results = []
+    for layer in range(n_layers):
+        for head in range(n_heads):
+            attention = get_attention_pattern(cache, layer, head)
+            n = attention.shape[0]
+            total = sum(attention[i, max(0, i - k):i].sum().item() for i in range(n))
+            pct = total / n * 100
+            results.append((layer, head, pct, _classify_pct(pct)))
+    results.sort(key=lambda x: x[2], reverse=True)
+    return results
+
+
+def show_few_prev_tokens_pcts(cache: ActivationCache, k: int = 5) -> None:
+    """Print few-previous-tokens attention % table for all heads."""
+    _show_metric_table(few_prev_tokens_pcts(cache, k), f"Prev-{k}tok")
 
 
 def compute_head_raw_pcts(
