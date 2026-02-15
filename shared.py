@@ -151,6 +151,10 @@ HEAD_TYPES: dict[str, tuple[str, str]] = {
         "Conjunction Attender",
         "Fraction of attention directed to conjunction positions (CC)",
     ),
+    "salient_word_attention": (
+        "Salient Word Attender",
+        "Fraction of attention directed to semantically salient content words (powerful, superhuman, intelligence, deceptive, etc.)",
+    ),
     "semantically_salient": (
         "Semantically Salient Attender",
         "Attends to content words with high semantic salience (scaled up, deceptive)",
@@ -240,6 +244,7 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
     "preposition_attention": [],
     "determiner_attention": [],
     "conjunction_attention": [],
+    "salient_word_attention": [],
     "semantically_salient": [
         ((0, 7), "half"),
         ((0, 11), "partial"),
@@ -285,6 +290,7 @@ TYPE_ENTROPY_KEYS: dict[str, str] = {
     "preposition_attention": "preposition_attention_entropy",
     "determiner_attention": "determiner_attention_entropy",
     "conjunction_attention": "conjunction_attention_entropy",
+    "salient_word_attention": "salient_word_attention_entropy",
 }
 
 
@@ -557,12 +563,19 @@ POS_CATEGORIES: dict[str, set[str]] = {
 }
 
 
-def _get_pos_positions(str_tokens: list[str]) -> dict[str, list[int]]:
-    """Map POS categories to token position lists using NLTK POS tagging."""
-    import nltk
-    nltk.download("averaged_perceptron_tagger_eng", quiet=True)
+SALIENT_WORDS = {
+    "powerful", "significantly", "superhuman", "machine", "intelligence",
+    "century", "learning", "scaled", "systems", "level",
+    "deceptive", "manipulative", "plans", "avoid",
+}
 
-    # Reconstruct words from subword tokens
+
+def _reconstruct_words(str_tokens: list[str]) -> list[tuple[str, list[int]]]:
+    """Reconstruct words from subword tokens.
+
+    Returns list of (word_string, [token_indices]).
+    Skips the first token (assumed to be <|endoftext|>).
+    """
     words: list[tuple[str, list[int]]] = []
     current_word = ""
     current_indices: list[int] = []
@@ -589,7 +602,15 @@ def _get_pos_positions(str_tokens: list[str]) -> dict[str, list[int]]:
             current_indices = [i]
     if current_indices:
         words.append((current_word, current_indices))
+    return words
 
+
+def _get_pos_positions(str_tokens: list[str]) -> dict[str, list[int]]:
+    """Map POS categories to token position lists using NLTK POS tagging."""
+    import nltk
+    nltk.download("averaged_perceptron_tagger_eng", quiet=True)
+
+    words = _reconstruct_words(str_tokens)
     tagged = nltk.pos_tag([w for w, _ in words])
 
     result: dict[str, list[int]] = {cat: [] for cat in POS_CATEGORIES}
@@ -599,6 +620,15 @@ def _get_pos_positions(str_tokens: list[str]) -> dict[str, list[int]]:
                 result[cat].extend(indices)
                 break
     return result
+
+
+def _get_salient_positions(str_tokens: list[str]) -> list[int]:
+    """Get token positions for salient content words."""
+    positions: list[int] = []
+    for word, indices in _reconstruct_words(str_tokens):
+        if word.lower() in SALIENT_WORDS:
+            positions.extend(indices)
+    return positions
 
 
 def attention_to_positions_pcts(
@@ -661,6 +691,7 @@ def compute_all_type_metrics(
     Returns dict mapping (type_id, layer, head) -> pct.
     """
     pos_positions = _get_pos_positions(str_tokens)
+    salient_positions = _get_salient_positions(str_tokens)
 
     metric_calls: dict[str, list[tuple[int, int, float, str]]] = {
         "end_of_text": attention_to_position_pct(cache, position=0),
@@ -677,6 +708,12 @@ def compute_all_type_metrics(
         "period_attention_entropy": token_attention_entropy_pcts(cache, str_tokens, "."),
         "few_prev_tokens_entropy": few_prev_tokens_entropy_pcts(cache, k=5),
     }
+    # Salient word metrics
+    metric_calls["salient_word_attention"] = attention_to_positions_pcts(cache, salient_positions)
+    ent_key = TYPE_ENTROPY_KEYS.get("salient_word_attention")
+    if ent_key:
+        metric_calls[ent_key] = positions_attention_entropy_pcts(cache, salient_positions)
+
     # POS-based metrics
     for pos_cat, positions in pos_positions.items():
         type_id = f"{pos_cat}_attention"
