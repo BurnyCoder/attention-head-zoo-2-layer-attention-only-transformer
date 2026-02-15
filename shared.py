@@ -1,5 +1,7 @@
 """Shared utilities for attention head zoo notebooks."""
 
+from collections.abc import Callable
+
 import torch as t
 from IPython.display import Markdown, display
 from jaxtyping import Float
@@ -305,159 +307,108 @@ def _show_metric_table(results: list[tuple[int, int, float, str]], label: str) -
         print(f"L{layer}H{head:<5} {pct:>11.2f}%  {level}")
 
 
-def attention_to_position_pct(
+def _compute_metric_pcts(
     cache: ActivationCache,
-    position: int,
+    metric_fn: Callable[[Float[Tensor, "dest src"]], float],
     n_layers: int = 2,
     n_heads: int = 12,
 ) -> list[tuple[int, int, float, str]]:
-    """Compute mean attention % to a given source position for all heads.
+    """Compute a metric for every head and return sorted results.
 
-    Returns list of (layer, head, pct, level) sorted by pct descending.
+    Args:
+        cache: Activation cache from model forward pass.
+        metric_fn: Function taking a single head's attention matrix [dest, src]
+            and returning a fraction (0-1) to be displayed as %.
+
+    Returns:
+        List of (layer, head, pct, level) sorted by pct descending.
     """
     results = []
     for layer in range(n_layers):
         for head in range(n_heads):
             attention = get_attention_pattern(cache, layer, head)
-            pct = attention[:, position].mean().item() * 100
+            pct = metric_fn(attention) * 100
             results.append((layer, head, pct, _classify_pct(pct)))
     results.sort(key=lambda x: x[2], reverse=True)
     return results
 
+
+# --- Specific metric functions (all average over all positions) ---
+
+def attention_to_position_pct(
+    cache: ActivationCache, position: int, **kwargs
+) -> list[tuple[int, int, float, str]]:
+    """Mean attention to a given source position, averaged over all dest positions."""
+    return _compute_metric_pcts(
+        cache, lambda a: a[:, position].mean().item(), **kwargs
+    )
 
 def show_attention_to_position(cache: ActivationCache, position: int, label: str = "position") -> None:
-    """Print a table of mean attention % to a source position for all heads."""
     _show_metric_table(attention_to_position_pct(cache, position), label)
 
-
-def self_attention_pcts(
-    cache: ActivationCache,
-    n_layers: int = 2,
-    n_heads: int = 12,
-) -> list[tuple[int, int, float, str]]:
-    """Compute mean self-attention % (diagonal) for all heads."""
-    results = []
-    for layer in range(n_layers):
-        for head in range(n_heads):
-            attention = get_attention_pattern(cache, layer, head)
-            pct = t.diagonal(attention).mean().item() * 100
-            results.append((layer, head, pct, _classify_pct(pct)))
-    results.sort(key=lambda x: x[2], reverse=True)
-    return results
-
+def self_attention_pcts(cache: ActivationCache, **kwargs) -> list[tuple[int, int, float, str]]:
+    """Mean diagonal attention (self-attention), averaged over all positions."""
+    return _compute_metric_pcts(
+        cache, lambda a: t.diagonal(a).mean().item(), **kwargs
+    )
 
 def show_self_attention_pcts(cache: ActivationCache) -> None:
-    """Print self-attention % table for all heads."""
     _show_metric_table(self_attention_pcts(cache), "Self-attn")
 
-
-def prev_token_pcts(
-    cache: ActivationCache,
-    n_layers: int = 2,
-    n_heads: int = 12,
-) -> list[tuple[int, int, float, str]]:
-    """Compute mean previous-token attention % for all heads."""
-    results = []
-    for layer in range(n_layers):
-        for head in range(n_heads):
-            attention = get_attention_pattern(cache, layer, head)
-            n = attention.shape[0]
-            pct = (
-                t.tensor([attention[i, i - 1].item() for i in range(1, n)]).mean().item() * 100
-                if n > 1 else 0.0
-            )
-            results.append((layer, head, pct, _classify_pct(pct)))
-    results.sort(key=lambda x: x[2], reverse=True)
-    return results
-
+def prev_token_pcts(cache: ActivationCache, **kwargs) -> list[tuple[int, int, float, str]]:
+    """Mean previous-token attention, averaged over all positions."""
+    def metric(a):
+        n = a.shape[0]
+        if n <= 1:
+            return 0.0
+        return t.tensor([a[i, i - 1].item() for i in range(1, n)]).mean().item()
+    return _compute_metric_pcts(cache, metric, **kwargs)
 
 def show_prev_token_pcts(cache: ActivationCache) -> None:
-    """Print previous-token attention % table for all heads."""
     _show_metric_table(prev_token_pcts(cache), "Prev-tok")
 
-
 def attention_to_token_pcts(
-    cache: ActivationCache,
-    str_tokens: list[str],
-    token: str,
-    n_layers: int = 2,
-    n_heads: int = 12,
+    cache: ActivationCache, str_tokens: list[str], token: str, **kwargs
 ) -> list[tuple[int, int, float, str]]:
-    """Compute mean attention % to positions containing a specific token string."""
+    """Mean attention to positions containing token, averaged over all dest positions."""
     positions = [i for i, tok in enumerate(str_tokens) if token in tok]
     if not positions:
         return []
-    results = []
-    for layer in range(n_layers):
-        for head in range(n_heads):
-            attention = get_attention_pattern(cache, layer, head)
-            pct = attention[:, positions].sum(dim=-1).mean().item() * 100
-            results.append((layer, head, pct, _classify_pct(pct)))
-    results.sort(key=lambda x: x[2], reverse=True)
-    return results
-
+    return _compute_metric_pcts(
+        cache, lambda a: a[:, positions].sum(dim=-1).mean().item(), **kwargs
+    )
 
 def show_attention_to_token(
     cache: ActivationCache, str_tokens: list[str], token: str, label: str
 ) -> None:
-    """Print attention-to-token % table for all heads."""
     _show_metric_table(attention_to_token_pcts(cache, str_tokens, token), label)
 
-
 def attention_from_token_pcts(
-    cache: ActivationCache,
-    str_tokens: list[str],
-    token: str,
-    n_layers: int = 2,
-    n_heads: int = 12,
+    cache: ActivationCache, str_tokens: list[str], token: str, **kwargs
 ) -> list[tuple[int, int, float, str]]:
-    """Compute avg peak attention % FROM positions containing a specific token.
-
-    For each token position as destination, finds its max attention weight,
-    then averages across all matching positions. Measures how focused the
-    attention is when this token type is the query.
-    """
+    """Avg peak attention FROM positions containing token (token as query)."""
     positions = [i for i, tok in enumerate(str_tokens) if token in tok]
     if not positions:
         return []
-    results = []
-    for layer in range(n_layers):
-        for head in range(n_heads):
-            attention = get_attention_pattern(cache, layer, head)
-            pct = attention[positions, :].max(dim=-1).values.mean().item() * 100
-            results.append((layer, head, pct, _classify_pct(pct)))
-    results.sort(key=lambda x: x[2], reverse=True)
-    return results
-
+    return _compute_metric_pcts(
+        cache, lambda a: a[positions, :].max(dim=-1).values.mean().item(), **kwargs
+    )
 
 def show_attention_from_token(
     cache: ActivationCache, str_tokens: list[str], token: str, label: str
 ) -> None:
-    """Print attention-from-token % table for all heads."""
     _show_metric_table(attention_from_token_pcts(cache, str_tokens, token), label)
 
-
 def few_prev_tokens_pcts(
-    cache: ActivationCache,
-    k: int = 5,
-    n_layers: int = 2,
-    n_heads: int = 12,
+    cache: ActivationCache, k: int = 5, **kwargs
 ) -> list[tuple[int, int, float, str]]:
-    """Compute mean attention % to the k preceding tokens (excluding self)."""
-    results = []
-    for layer in range(n_layers):
-        for head in range(n_heads):
-            attention = get_attention_pattern(cache, layer, head)
-            n = attention.shape[0]
-            total = sum(attention[i, max(0, i - k):i].sum().item() for i in range(n))
-            pct = total / n * 100
-            results.append((layer, head, pct, _classify_pct(pct)))
-    results.sort(key=lambda x: x[2], reverse=True)
-    return results
-
+    """Mean attention to k preceding tokens, averaged over all positions."""
+    def metric(a):
+        n = a.shape[0]
+        return sum(a[i, max(0, i - k):i].sum().item() for i in range(n)) / n
+    return _compute_metric_pcts(cache, metric, **kwargs)
 
 def show_few_prev_tokens_pcts(cache: ActivationCache, k: int = 5) -> None:
-    """Print few-previous-tokens attention % table for all heads."""
     _show_metric_table(few_prev_tokens_pcts(cache, k), f"Prev-{k}tok")
 
 
