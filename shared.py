@@ -404,6 +404,39 @@ def show_attention_to_token(
     _show_metric_table(attention_to_token_pcts(cache, str_tokens, token), label)
 
 
+def attention_from_token_pcts(
+    cache: ActivationCache,
+    str_tokens: list[str],
+    token: str,
+    n_layers: int = 2,
+    n_heads: int = 12,
+) -> list[tuple[int, int, float, str]]:
+    """Compute avg peak attention % FROM positions containing a specific token.
+
+    For each token position as destination, finds its max attention weight,
+    then averages across all matching positions. Measures how focused the
+    attention is when this token type is the query.
+    """
+    positions = [i for i, tok in enumerate(str_tokens) if token in tok]
+    if not positions:
+        return []
+    results = []
+    for layer in range(n_layers):
+        for head in range(n_heads):
+            attention = get_attention_pattern(cache, layer, head)
+            pct = attention[positions, :].max(dim=-1).values.mean().item() * 100
+            results.append((layer, head, pct, _classify_pct(pct)))
+    results.sort(key=lambda x: x[2], reverse=True)
+    return results
+
+
+def show_attention_from_token(
+    cache: ActivationCache, str_tokens: list[str], token: str, label: str
+) -> None:
+    """Print attention-from-token % table for all heads."""
+    _show_metric_table(attention_from_token_pcts(cache, str_tokens, token), label)
+
+
 def few_prev_tokens_pcts(
     cache: ActivationCache,
     k: int = 5,
