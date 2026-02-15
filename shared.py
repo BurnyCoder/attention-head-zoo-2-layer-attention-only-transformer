@@ -105,27 +105,11 @@ HEAD_TYPES: dict[str, tuple[str, str]] = {
     ),
     "period_attention": (
         "Period Attender",
-        "Attends to period (.) tokens (combined: to + from)",
-    ),
-    "period_attention_to": (
-        "Period Attender (To .)",
-        "Attention flowing TO period positions (period as source, averaged over all dest)",
-    ),
-    "period_attention_from": (
-        "Period Attender (From .)",
-        "Attention flowing FROM period positions (period as dest/query, avg peak attention)",
+        "Attention flowing TO period (.) positions (period as source, averaged over all dest)",
     ),
     "comma_attention": (
         "Comma Attender",
-        "Attends to comma (,) tokens (combined: to + from)",
-    ),
-    "comma_attention_to": (
-        "Comma Attender (To ,)",
-        "Attention flowing TO comma positions (comma as source, averaged over all dest)",
-    ),
-    "comma_attention_from": (
-        "Comma Attender (From ,)",
-        "Attention flowing FROM comma positions (comma as dest/query, avg peak attention)",
+        "Attention flowing TO comma (,) positions (comma as source, averaged over all dest)",
     ),
     "self_attention": (
         "Self-Attender",
@@ -202,14 +186,10 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
     "period_attention": [
         ((1, 5), "half"),
     ],
-    "period_attention_to": [],
-    "period_attention_from": [],
     "comma_attention": [
         ((0, 5), "full"),
         ((0, 2), "partial"),
     ],
-    "comma_attention_to": [],
-    "comma_attention_from": [],
     "self_attention": [
         ((1, 2), "partial"),
         ((0, 9), "partial"),
@@ -403,22 +383,6 @@ def show_attention_to_token(
 ) -> None:
     _show_metric_table(attention_to_token_pcts(cache, str_tokens, token), label)
 
-def attention_from_token_pcts(
-    cache: ActivationCache, str_tokens: list[str], token: str, **kwargs
-) -> list[tuple[int, int, float, str]]:
-    """Avg peak attention FROM positions containing token (token as query)."""
-    positions = [i for i, tok in enumerate(str_tokens) if token in tok]
-    if not positions:
-        return []
-    return _compute_metric_pcts(
-        cache, lambda a: a[positions, :].max(dim=-1).values.mean().item(), **kwargs
-    )
-
-def show_attention_from_token(
-    cache: ActivationCache, str_tokens: list[str], token: str, label: str
-) -> None:
-    _show_metric_table(attention_from_token_pcts(cache, str_tokens, token), label)
-
 def few_prev_tokens_pcts(
     cache: ActivationCache, k: int = 5, **kwargs
 ) -> list[tuple[int, int, float, str]]:
@@ -474,11 +438,7 @@ def compute_all_type_metrics(
         "self_attention": self_attention_pcts(cache),
         "previous_token": prev_token_pcts(cache),
         "comma_attention": attention_to_token_pcts(cache, str_tokens, ","),
-        "comma_attention_to": attention_to_token_pcts(cache, str_tokens, ","),
-        "comma_attention_from": attention_from_token_pcts(cache, str_tokens, ","),
         "period_attention": attention_to_token_pcts(cache, str_tokens, "."),
-        "period_attention_to": attention_to_token_pcts(cache, str_tokens, "."),
-        "period_attention_from": attention_from_token_pcts(cache, str_tokens, "."),
         "few_previous_tokens": few_prev_tokens_pcts(cache, k=5),
     }
     result = {}
