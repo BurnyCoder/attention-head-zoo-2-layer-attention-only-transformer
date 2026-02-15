@@ -43,6 +43,14 @@ The model is a 2-layer attention-only transformer with:
 - Separate embed/unembed matrices
 - Pretrained weights from `callummcdougall/attn_only_2L_half` on HuggingFace
 
+## Attention Matrix Terminology
+
+The attention pattern for each head is a matrix `attention[dest, src]` where:
+- **Destination (dest)** — the token position that is *querying* (attending from). Each row sums to 1 after softmax.
+- **Source (src)** — the token position being *attended to* (providing information). High `attention[dest, src]` means token at `dest` pulls information from token at `src`.
+
+"Attention TO X" = X as source (columns), averaged over all dest. "Attention FROM X" = X as dest (rows).
+
 ## Key Data Structures in shared.py
 
 - `HEAD_CLASSIFICATIONS` — `dict[(layer, head) -> str]`: one-line description per head

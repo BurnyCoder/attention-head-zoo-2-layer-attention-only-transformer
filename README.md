@@ -19,6 +19,14 @@ A toy 2-layer attention-only transformer designed for interpretability:
 - `shared.py` — shared data structures (classifications, type mappings, activity levels) and utility functions (model loading, attention extraction, visualization, tables)
 - `generate_notebooks.py` — generates all 39 head/type notebooks from data in `shared.py`
 
+## Attention Matrix Terminology
+
+The attention pattern for each head is a matrix `attention[dest, src]` where:
+- **Destination (dest)** — the token position that is *querying* (attending from). Each row sums to 1 after softmax.
+- **Source (src)** — the token position being *attended to* (providing information). High `attention[dest, src]` means token at `dest` is pulling information from token at `src`.
+
+For example, "attention TO commas" means commas appear as source tokens (columns), averaged over all destination positions. "Attention FROM commas" means commas are the querying/destination tokens (rows).
+
 ## Attention Head Types Found
 
 15 types identified from analyzing attention patterns on natural language text. Each head can exhibit multiple types at different activity levels (full 90-100%, fullish 60-90%, half 40-60%, partial 10-40%).
