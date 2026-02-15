@@ -84,3 +84,4 @@ Run any notebook with the `.venv` Python kernel. To regenerate the head/type not
 
 - Look at attention patterns and find stuff like attending to previous token if directly related
 - Go through my manual classifications and compare with automatic and pick the better one
+- See if its attending from some subset of semantically meaningful tokens to some subset of semantically meaningful tokens 

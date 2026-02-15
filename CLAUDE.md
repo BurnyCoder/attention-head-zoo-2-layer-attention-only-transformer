@@ -8,9 +8,10 @@ Attention head zoo: manually cataloguing and classifying the functional roles of
 
 - `attention-head-zoo-2-layer-attention-only-transformer.ipynb` — main notebook with per-layer attention visualizations and programmatic summary tables
 - `shared.py` — all shared data structures and utility functions (imported by every notebook)
-- `generate_notebooks.py` — generates the 39 head/type notebooks from `shared.py` data
+- `generate_notebooks.py` — generates all 343 head/type/cross notebooks from `shared.py` data
 - `heads/` — 24 per-head analysis notebooks (`l{layer}h{head}.ipynb`)
-- `types/` — 15 per-type analysis notebooks (`{type_id}.ipynb`)
+- `types/` — 30 per-type analysis notebooks (`{type_id}.ipynb`)
+- `cross/` — 289 cross-type pair analysis notebooks (17×17 from/to pairs)
 - `pyproject.toml` / `uv.lock` — dependencies managed with uv
 
 ## Setup & Running
@@ -33,6 +34,9 @@ To regenerate head/type notebooks after editing classifications or types in `sha
 - `einops` — tensor reshaping
 - `jaxtyping` — tensor type annotations
 - `torch`, `plotly`, `numpy`, `nbformat`
+- `nltk` — POS tagging for token classification
+- `pandas`, `itables` — interactive tables in notebooks
+- `tqdm` — progress bars
 
 ## Model
 
@@ -54,8 +58,14 @@ The attention pattern for each head is a matrix `attention[dest, src]` where:
 ## Key Data Structures in shared.py
 
 - `HEAD_CLASSIFICATIONS` — `dict[(layer, head) -> str]`: one-line description per head
-- `HEAD_TYPES` — `dict[type_id -> (display_name, description)]`: 15 attention head types
-- `TYPE_TO_HEADS` — `dict[type_id -> list[((layer, head), activity_level)]]`: which heads exhibit each type
+- `HEAD_TYPES` — `dict[type_id -> (display_name, description)]`: 30 attention head types
+- `TYPE_TO_HEADS` — `dict[type_id -> list[((layer, head), activity_level)]]`: which heads exhibit each type. Measurable types are auto-populated by `populate_measurable_type_heads()`; non-measurable types have manual assignments.
+- `MEASURABLE_TYPES` — `set[str]`: 21 type IDs with programmatic metrics (auto-populated at ≥20% threshold)
+- `TYPE_ENTROPY_KEYS` — `dict[type_id -> entropy_key]`: maps type IDs to their entropy metric names
+- `POS_CATEGORIES` — `dict[str -> set[str]]`: 8 POS tag categories (noun, verb, adjective, adverb, pronoun, preposition, determiner, conjunction)
+- Word sets: `SALIENT_WORDS`, `AI_WORDS`, `SPOOKY_WORDS`, `GLUE_WORDS`, `CERTAINTY_WORDS`, `QUESTIONING_WORDS`
+- `TYPE_ID_TO_POSITION_KEY` — `dict[type_id -> short_name]`: maps type IDs to cross-type position keys
+- `CROSS_TYPE_NAMES` — `dict[short_name -> display_name]`: 17 cross-type display names
 - Activity levels: `full` (90-100%), `fullish` (60-90%), `half` (40-60%), `partial` (10-40%), `almost_none` (0.1-10%)
 
 ## Key Functions in shared.py
@@ -67,7 +77,13 @@ The attention pattern for each head is a matrix `attention[dest, src]` where:
 - `show_attention_tables(str_tokens, attention, top_k)` — highest/lowest attention weight markdown tables
 - `show_attention_to_position(cache, position, label)` — prints attention % to a position for all heads
 - `compute_head_raw_pcts(cache)` — computes EOT%, self-attention%, previous-token% for all heads
+- `compute_all_type_metrics(cache, str_tokens)` — computes metric % for all measurable types × all heads
+- `populate_measurable_type_heads(cache, str_tokens)` — auto-populates TYPE_TO_HEADS for measurable types (≥20% threshold)
+- `compute_cross_type_metrics(cache, str_tokens)` — computes cross-type attention between word categories for all heads
+- `get_type_positions(str_tokens)` — gets token positions for all 17 cross-type categories
 - `get_head_types(layer, head)` — reverse lookup: head -> list of `(type_id, activity_level)`
+- `show_type_filtered_tables(str_tokens, attention, positions, label)` — attention tables filtered to type positions
+- `attention_to_positions_pcts(cache, positions)` — mean attention to arbitrary source positions
 
 ## Conventions
 
