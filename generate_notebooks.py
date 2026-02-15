@@ -394,14 +394,29 @@ to_period = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_
 from_period = {(l, h): pct for l, h, pct, _ in attention_from_token_pcts(cache, str_tokens, ".")}
 few_prev_pcts = {(l, h): pct for l, h, pct, _ in few_prev_tokens_pcts(cache, k=5)}
 
+def get_type_pct(tid, l, h):
+    if tid == "end_of_text": return raw_pcts[(l, h)]["eot"]
+    if tid == "self_attention": return raw_pcts[(l, h)]["self_attn"]
+    if tid == "previous_token": return raw_pcts[(l, h)]["prev_token"]
+    if tid in ("comma_attention", "comma_attention_to"): return to_comma[(l, h)]
+    if tid == "comma_attention_from": return from_comma[(l, h)]
+    if tid in ("period_attention", "period_attention_to"): return to_period[(l, h)]
+    if tid == "period_attention_from": return from_period[(l, h)]
+    if tid == "few_previous_tokens": return few_prev_pcts[(l, h)]
+    return None
+
 rows = []
 for layer in range(2):
     for head in range(12):
         head_types = get_head_types(layer, head)
-        types_str = ", ".join(
-            f"{HEAD_TYPES[tid][0]} ({ACTIVITY_LABELS[act]})"
-            for tid, act in head_types
-        ) if head_types else "\\u2014"
+        type_parts = []
+        for tid, act in head_types:
+            pct_val = get_type_pct(tid, layer, head)
+            if pct_val is not None:
+                type_parts.append(f"{HEAD_TYPES[tid][0]} ({pct_val:.1f}%)")
+            else:
+                type_parts.append(f"{HEAD_TYPES[tid][0]} ({ACTIVITY_LABELS[act]})")
+        types_str = ", ".join(type_parts) if type_parts else "\\u2014"
         pcts = raw_pcts[(layer, head)]
         rows.append({
             "Head": f"L{layer}H{head}",
