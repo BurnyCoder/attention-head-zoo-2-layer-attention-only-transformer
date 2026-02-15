@@ -84,10 +84,9 @@ import torch as t
 from IPython.display import Markdown, display
 from shared import (
     load_model, run_and_cache, get_attention_pattern,
-    show_head_pattern, show_attention_tables, show_attention_to_position,
-    show_self_attention_pcts, show_prev_token_pcts,
-    show_attention_to_token, show_attention_from_token,
-    show_few_prev_tokens_pcts, TEXT,
+    show_head_pattern, show_attention_tables,
+    compute_all_type_metrics, HEAD_TYPES, ACTIVITY_LABELS,
+    get_head_types, TEXT,
 )"""
 
 LEVEL_EXPR = (
@@ -96,87 +95,12 @@ LEVEL_EXPR = (
     "'almost none' if pct >= 0.1 else '-'"
 )
 
-# Types with programmatically computable % metrics.
-# Each entry: summary_title, summary_desc, summary_code, head_pct_code (must assign `pct`).
-MEASURABLE_TYPES: dict[str, tuple[str, str, str, str]] = {
-    "end_of_text": (
-        "EOT Attention % Across All 24 Heads",
-        "Mean fraction of attention weight allocated to position 0 "
-        "(end-of-text token), averaged across all destination positions. "
-        "Sorted by raw % descending.",
-        'show_attention_to_position(cache, position=0, label="EOT")',
-        "pct = get_attention_pattern(cache, layer={l}, head={h})[:, 0].mean().item() * 100",
-    ),
-    "self_attention": (
-        "Self-Attention % Across All 24 Heads",
-        "Mean diagonal attention weight (attention[i, i]) across all positions. "
-        "Sorted by raw % descending.",
-        "show_self_attention_pcts(cache)",
-        "pct = t.diagonal(get_attention_pattern(cache, layer={l}, head={h})).mean().item() * 100",
-    ),
-    "previous_token": (
-        "Previous Token Attention % Across All 24 Heads",
-        "Mean attention to the immediately preceding token (attention[i, i-1]). "
-        "Sorted by raw % descending.",
-        "show_prev_token_pcts(cache)",
-        "attn = get_attention_pattern(cache, layer={l}, head={h})\n"
-        "pct = t.tensor([attn[i, i-1].item() for i in range(1, attn.shape[0])]).mean().item() * 100",
-    ),
-    "comma_attention": (
-        "Comma Attention % Across All 24 Heads (To ,)",
-        'Mean attention TO comma (",") positions (comma as source), averaged over all destination positions. '
-        "Sorted by raw % descending.",
-        'show_attention_to_token(cache, str_tokens, ",", "To Comma")',
-        'comma_pos = [i for i, tok in enumerate(str_tokens) if "," in tok]\n'
-        "pct = get_attention_pattern(cache, layer={l}, head={h})[:, comma_pos].sum(dim=-1).mean().item() * 100",
-    ),
-    "comma_attention_to": (
-        "Comma Attention % (To ,) Across All 24 Heads",
-        'Mean attention TO comma (",") positions (comma as source), averaged over all destination positions.',
-        'show_attention_to_token(cache, str_tokens, ",", "To Comma")',
-        'comma_pos = [i for i, tok in enumerate(str_tokens) if "," in tok]\n'
-        "pct = get_attention_pattern(cache, layer={l}, head={h})[:, comma_pos].sum(dim=-1).mean().item() * 100",
-    ),
-    "comma_attention_from": (
-        "Comma Attention % (From ,) Across All 24 Heads",
-        'Avg peak attention FROM comma (",") positions (comma as query/dest). '
-        "For each comma position, takes the max attention it pays to any source, then averages.",
-        'show_attention_from_token(cache, str_tokens, ",", "From Comma")',
-        'comma_pos = [i for i, tok in enumerate(str_tokens) if "," in tok]\n'
-        "pct = get_attention_pattern(cache, layer={l}, head={h})[comma_pos, :].max(dim=-1).values.mean().item() * 100",
-    ),
-    "period_attention": (
-        "Period Attention % Across All 24 Heads (To .)",
-        'Mean attention TO period (".") positions (period as source), averaged over all destination positions. '
-        "Sorted by raw % descending.",
-        'show_attention_to_token(cache, str_tokens, ".", "To Period")',
-        'period_pos = [i for i, tok in enumerate(str_tokens) if "." in tok]\n'
-        "pct = get_attention_pattern(cache, layer={l}, head={h})[:, period_pos].sum(dim=-1).mean().item() * 100",
-    ),
-    "period_attention_to": (
-        "Period Attention % (To .) Across All 24 Heads",
-        'Mean attention TO period (".") positions (period as source), averaged over all destination positions.',
-        'show_attention_to_token(cache, str_tokens, ".", "To Period")',
-        'period_pos = [i for i, tok in enumerate(str_tokens) if "." in tok]\n'
-        "pct = get_attention_pattern(cache, layer={l}, head={h})[:, period_pos].sum(dim=-1).mean().item() * 100",
-    ),
-    "period_attention_from": (
-        "Period Attention % (From .) Across All 24 Heads",
-        'Avg peak attention FROM period (".") positions (period as query/dest). '
-        "For each period position, takes the max attention it pays to any source, then averages.",
-        'show_attention_from_token(cache, str_tokens, ".", "From Period")',
-        'period_pos = [i for i, tok in enumerate(str_tokens) if "." in tok]\n'
-        "pct = get_attention_pattern(cache, layer={l}, head={h})[period_pos, :].max(dim=-1).values.mean().item() * 100",
-    ),
-    "few_previous_tokens": (
-        "Few Previous Tokens Attention % Across All 24 Heads",
-        "Mean attention to the 5 preceding tokens (excluding self). "
-        "Sorted by raw % descending.",
-        "show_few_prev_tokens_pcts(cache, k=5)",
-        "attn = get_attention_pattern(cache, layer={l}, head={h})\n"
-        "n = attn.shape[0]\n"
-        "pct = sum(attn[i, max(0, i-5):i].sum().item() for i in range(n)) / n * 100",
-    ),
+# Type IDs that have programmatically computable metrics via compute_all_type_metrics.
+MEASURABLE_TYPES = {
+    "end_of_text", "self_attention", "previous_token",
+    "comma_attention", "comma_attention_to", "comma_attention_from",
+    "period_attention", "period_attention_to", "period_attention_from",
+    "few_previous_tokens",
 }
 
 LOAD_CODE = """\
@@ -224,44 +148,26 @@ def generate_head_notebook(layer: int, head: int) -> None:
         ),
     ]
 
-    # Activity breakdown table
-    if head_types:
-        table_lines = [
-            "## Attention Strength by Type\n",
-            "| Type | Activity Level | Percentage Range |",
-            "|------|---------------|-----------------|",
-        ]
-        for type_id, activity in head_types:
-            display_name, _ = HEAD_TYPES[type_id]
-            table_lines.append(
-                f"| {display_name} | {activity} | {ACTIVITY_PCT_RANGES[activity]} |"
-            )
-        cells.append(md_cell("\n".join(table_lines)))
-
-    # For unclassified heads, add helper code
-    if is_todo:
-        cells.append(
-            md_cell(
-                "## Auto-Classification Helper\n"
-                "\n"
-                "Inspect the attention pattern above and fill in the classification."
-            )
+    # Programmatic metrics for all measurable types + manual types
+    cells.append(md_cell("## Attention Metrics"))
+    cells.append(
+        code_cell(
+            f"tm = compute_all_type_metrics(cache, str_tokens)\n"
+            f"head_types = get_head_types({layer}, {head})\n"
+            f"# Show all measurable metrics for this head\n"
+            f"lines = []\n"
+            f"for tid in HEAD_TYPES:\n"
+            f"    key = (tid, {layer}, {head})\n"
+            f"    if key in tm:\n"
+            f"        lines.append(f\"| {{HEAD_TYPES[tid][0]}} | {{tm[key]:.2f}}% |\")\n"
+            f"# Show non-measurable assigned types\n"
+            f"for tid, act in head_types:\n"
+            f"    if (tid, {layer}, {head}) not in tm:\n"
+            f"        lines.append(f\"| {{HEAD_TYPES[tid][0]}} | {{ACTIVITY_LABELS[act]}} |\")\n"
+            f"table = \"| Type | Value |\\n|------|-------|\\n\" + \"\\n\".join(lines)\n"
+            f"display(Markdown(table))"
         )
-        cells.append(
-            code_cell(
-                f"# Helper statistics for classifying this head\n"
-                f"import torch as t\n"
-                f"attention = get_attention_pattern(cache, layer={layer}, head={head})\n"
-                f'print(f"Mean attention to position 0 (EOT): {{attention[:, 0].mean().item():.4f}}")\n'
-                f'print(f"Mean diagonal (self-attention): {{t.diagonal(attention).mean().item():.4f}}")\n'
-                f"# Previous token attention: mean of attention[i, i-1] for i >= 1\n"
-                f"prev_attn = t.tensor([attention[i, i-1].item() for i in range(1, attention.shape[0])])\n"
-                f'print(f"Mean previous-token attention: {{prev_attn.mean().item():.4f}}")\n'
-                f"# Entropy of attention distribution (lower = more focused)\n"
-                f"entropy = -(attention * attention.clamp(min=1e-10).log()).sum(dim=-1).mean()\n"
-                f'print(f"Mean attention entropy: {{entropy.item():.4f}}")'
-            )
-        )
+    )
 
     filename = f"l{layer}h{head}.ipynb"
     write_notebook(HEADS_DIR / filename, make_notebook(cells))
@@ -278,7 +184,7 @@ def generate_type_notebook(type_id: str) -> None:
         reverse=True,
     )
 
-    measurable = MEASURABLE_TYPES.get(type_id)
+    is_measurable = type_id in MEASURABLE_TYPES
 
     cells = [
         md_cell(
@@ -290,20 +196,33 @@ def generate_type_notebook(type_id: str) -> None:
         code_cell(LOAD_CODE),
     ]
 
-    # Add programmatic % summary for measurable types
-    if measurable:
-        summary_title, summary_desc, summary_code, _ = measurable
-        cells.append(md_cell(f"## {summary_title}\n\n{summary_desc}"))
-        cells.append(code_cell(summary_code))
+    # Summary table: show this type's metric for all 24 heads (sorted)
+    cells.append(md_cell(f"## {display_name} — All 24 Heads"))
+    cells.append(
+        code_cell(
+            f"tm = compute_all_type_metrics(cache, str_tokens)\n"
+            f"is_measurable = (\"{type_id}\", 0, 0) in tm\n"
+            f"if is_measurable:\n"
+            f"    results = sorted(\n"
+            f"        [((l, h), tm[(\"{type_id}\", l, h)]) for l in range(2) for h in range(12)],\n"
+            f"        key=lambda x: x[1], reverse=True,\n"
+            f"    )\n"
+            f"    lines = [\"| Head | {display_name} % |\", \"|------|-------|\"]  \n"
+            f"    for (l, h), pct in results:\n"
+            f"        lines.append(f\"| L{{l}}H{{h}} | {{pct:.2f}}% |\")\n"
+            f"    display(Markdown(\"\\n\".join(lines)))\n"
+            f"else:\n"
+            f"    print(\"No programmatic metric available for this type.\")"
+        )
+    )
 
     for (l, h), activity in heads_sorted:
         classification = HEAD_CLASSIFICATIONS.get((l, h), "TODO")
-        if measurable:
-            _, _, _, head_pct_code = measurable
-            escaped = classification.replace("\\", "\\\\").replace('"', '\\"')
+        escaped = classification.replace("\\", "\\\\").replace('"', '\\"')
+        if is_measurable:
             cells.append(
                 code_cell(
-                    f"{head_pct_code.format(l=l, h=h)}\n"
+                    f"pct = tm[(\"{type_id}\", {l}, {h})]\n"
                     f"{LEVEL_EXPR}\n"
                     f'display(Markdown(f"---\\n## L{l}H{h} — {{pct:.2f}}% ({{level}})\\n\\n{escaped}"))'
                 )
