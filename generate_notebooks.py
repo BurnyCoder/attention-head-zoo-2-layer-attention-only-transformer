@@ -80,9 +80,10 @@ SETUP_CODE = """\
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path.cwd().parent))
+from IPython.display import Markdown, display
 from shared import (
     load_model, run_and_cache, get_attention_pattern,
-    show_head_pattern, show_attention_tables, TEXT,
+    show_head_pattern, show_attention_tables, show_attention_to_position, TEXT,
 )"""
 
 LOAD_CODE = """\
@@ -184,39 +185,49 @@ def generate_type_notebook(type_id: str) -> None:
         reverse=True,
     )
 
-    # Summary list
-    summary_lines = []
-    for (l, h), activity in heads_sorted:
-        summary_lines.append(f"- **L{l}H{h}** — {ACTIVITY_LABELS[activity]}")
-    summary_md = (
-        "\n".join(summary_lines)
-        if summary_lines
-        else "- *No heads assigned to this type*"
-    )
-
     cells = [
         md_cell(
             f"# {display_name}\n"
             f"\n"
-            f"{description}\n"
-            f"\n"
-            f"## Heads exhibiting this type ({len(heads_sorted)} total):\n"
-            f"{summary_md}"
+            f"{description}"
         ),
         code_cell(SETUP_CODE),
         code_cell(LOAD_CODE),
     ]
 
-    for (l, h), activity in heads_sorted:
-        classification = HEAD_CLASSIFICATIONS.get((l, h), "TODO")
+    # Add programmatic % summary for end_of_text type
+    if type_id == "end_of_text":
         cells.append(
             md_cell(
-                f"---\n"
-                f"## L{l}H{h} — {ACTIVITY_LABELS[activity]}\n"
-                f"\n"
-                f"{classification}"
+                "## EOT Attention % Across All 24 Heads\n"
+                "\n"
+                "Mean fraction of attention weight allocated to position 0 "
+                "(end-of-text token), averaged across all destination positions. "
+                "Sorted by raw % descending."
             )
         )
+        cells.append(code_cell('show_attention_to_position(cache, position=0, label="EOT")'))
+
+    for (l, h), activity in heads_sorted:
+        classification = HEAD_CLASSIFICATIONS.get((l, h), "TODO")
+        if type_id == "end_of_text":
+            escaped = classification.replace("\\", "\\\\").replace('"', '\\"')
+            cells.append(
+                code_cell(
+                    f"pct = get_attention_pattern(cache, layer={l}, head={h})[:, 0].mean().item() * 100\n"
+                    f"level = 'full' if pct >= 90 else 'fullish' if pct >= 60 else 'half' if pct >= 40 else 'partial' if pct >= 10 else 'almost none' if pct >= 0.1 else '-'\n"
+                    f'display(Markdown(f"---\\n## L{l}H{h} — {{pct:.2f}}% ({{level}})\\n\\n{escaped}"))'
+                )
+            )
+        else:
+            cells.append(
+                md_cell(
+                    f"---\n"
+                    f"## L{l}H{h} — {ACTIVITY_LABELS[activity]}\n"
+                    f"\n"
+                    f"{classification}"
+                )
+            )
         cells.append(
             code_cell(f"show_head_pattern(str_tokens, cache, layer={l}, head={h})")
         )

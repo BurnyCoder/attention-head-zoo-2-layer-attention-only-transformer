@@ -281,6 +281,47 @@ def get_attention_pattern(
     return cache["pattern", layer][head]
 
 
+def attention_to_position_pct(
+    cache: ActivationCache,
+    position: int,
+    n_layers: int = 2,
+    n_heads: int = 12,
+) -> list[tuple[int, int, float, str]]:
+    """Compute mean attention % to a given source position for all heads.
+
+    Returns list of (layer, head, pct, level) sorted by pct descending.
+    """
+    results = []
+    for layer in range(n_layers):
+        for head in range(n_heads):
+            attention = get_attention_pattern(cache, layer, head)
+            pct = attention[:, position].mean().item() * 100
+            if pct >= 90:
+                level = "full"
+            elif pct >= 60:
+                level = "fullish"
+            elif pct >= 40:
+                level = "half"
+            elif pct >= 10:
+                level = "partial"
+            elif pct >= 0.1:
+                level = "almost none"
+            else:
+                level = "-"
+            results.append((layer, head, pct, level))
+    results.sort(key=lambda x: x[2], reverse=True)
+    return results
+
+
+def show_attention_to_position(cache: ActivationCache, position: int, label: str = "position") -> None:
+    """Print a table of mean attention % to a source position for all heads."""
+    results = attention_to_position_pct(cache, position)
+    print(f"{'Head':<8} {label + ' %':>12}  {'Level'}")
+    print("-" * 35)
+    for layer, head, pct, level in results:
+        print(f"L{layer}H{head:<5} {pct:>11.2f}%  {level}")
+
+
 # === Visualization ===
 def show_head_pattern(
     str_tokens: list[str],
