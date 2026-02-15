@@ -322,6 +322,35 @@ def show_attention_to_position(cache: ActivationCache, position: int, label: str
         print(f"L{layer}H{head:<5} {pct:>11.2f}%  {level}")
 
 
+def compute_head_raw_pcts(
+    cache: ActivationCache,
+    n_layers: int = 2,
+    n_heads: int = 12,
+) -> dict[tuple[int, int], dict[str, float]]:
+    """Compute raw attention % for measurable types for all heads.
+
+    Returns dict mapping (layer, head) -> {metric_name: pct}.
+    Metrics: eot, self_attn, prev_token.
+    """
+    results = {}
+    for layer in range(n_layers):
+        for head in range(n_heads):
+            attention = get_attention_pattern(cache, layer, head)
+            n = attention.shape[0]
+            eot_pct = attention[:, 0].mean().item() * 100
+            self_pct = t.diagonal(attention).mean().item() * 100
+            prev_pct = (
+                t.tensor([attention[i, i - 1].item() for i in range(1, n)]).mean().item() * 100
+                if n > 1 else 0.0
+            )
+            results[(layer, head)] = {
+                "eot": eot_pct,
+                "self_attn": self_pct,
+                "prev_token": prev_pct,
+            }
+    return results
+
+
 # === Visualization ===
 def show_head_pattern(
     str_tokens: list[str],
