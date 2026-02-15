@@ -167,6 +167,14 @@ HEAD_TYPES: dict[str, tuple[str, str]] = {
         "Glue Word Attender (auto)",
         "Fraction of attention directed to function/glue words (we, that, is, are, to, be, if, and, or, etc.)",
     ),
+    "certainty_word_attention": (
+        "Certainty Word Attender",
+        "Fraction of attention directed to certainty/uncertainty words (think, likely, known, significantly)",
+    ),
+    "questioning_word_attention": (
+        "Questioning Word Attender",
+        "Fraction of attention directed to questioning words (if, how)",
+    ),
     "semantically_salient": (
         "Semantically Salient Attender",
         "Attends to content words with high semantic salience (scaled up, deceptive)",
@@ -260,6 +268,8 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
     "ai_word_attention": [],
     "spooky_word_attention": [],
     "glue_word_attention": [],
+    "certainty_word_attention": [],
+    "questioning_word_attention": [],
     "semantically_salient": [
         ((0, 7), "half"),
         ((0, 11), "partial"),
@@ -309,6 +319,8 @@ TYPE_ENTROPY_KEYS: dict[str, str] = {
     "ai_word_attention": "ai_word_attention_entropy",
     "spooky_word_attention": "spooky_word_attention_entropy",
     "glue_word_attention": "glue_word_attention_entropy",
+    "certainty_word_attention": "certainty_word_attention_entropy",
+    "questioning_word_attention": "questioning_word_attention_entropy",
 }
 
 
@@ -596,6 +608,10 @@ GLUE_WORDS = {
     "were", "they", "by", "are", "or", "and", "for", "how",
 }
 
+CERTAINTY_WORDS = {"think", "likely", "known", "significantly"}
+
+QUESTIONING_WORDS = {"if", "how"}
+
 
 def _reconstruct_words(str_tokens: list[str]) -> list[tuple[str, list[int]]]:
     """Reconstruct words from subword tokens.
@@ -742,6 +758,8 @@ def compute_all_type_metrics(
         ("ai_word_attention", ai_positions),
         ("spooky_word_attention", _get_word_set_positions(str_tokens, SPOOKY_WORDS)),
         ("glue_word_attention", _get_word_set_positions(str_tokens, GLUE_WORDS)),
+        ("certainty_word_attention", _get_word_set_positions(str_tokens, CERTAINTY_WORDS)),
+        ("questioning_word_attention", _get_word_set_positions(str_tokens, QUESTIONING_WORDS)),
     ]:
         metric_calls[type_id] = attention_to_positions_pcts(cache, positions)
         ent_key = TYPE_ENTROPY_KEYS.get(type_id)
@@ -779,6 +797,8 @@ TYPE_ID_TO_POSITION_KEY: dict[str, str] = {
     "ai_word_attention": "ai",
     "spooky_word_attention": "spooky",
     "glue_word_attention": "glue",
+    "certainty_word_attention": "certainty",
+    "questioning_word_attention": "questioning",
 }
 
 
@@ -800,6 +820,8 @@ CROSS_TYPE_NAMES: dict[str, str] = {
     "ai": "AI",
     "spooky": "Spooky",
     "glue": "Glue",
+    "certainty": "Certainty",
+    "questioning": "Questioning",
 }
 
 
@@ -817,6 +839,8 @@ def get_type_positions(str_tokens: list[str]) -> dict[str, list[int]]:
         "ai": _get_word_set_positions(str_tokens, AI_WORDS),
         "spooky": _get_word_set_positions(str_tokens, SPOOKY_WORDS),
         "glue": _get_word_set_positions(str_tokens, GLUE_WORDS),
+        "certainty": _get_word_set_positions(str_tokens, CERTAINTY_WORDS),
+        "questioning": _get_word_set_positions(str_tokens, QUESTIONING_WORDS),
     }
     result.update(pos_positions)
     return result

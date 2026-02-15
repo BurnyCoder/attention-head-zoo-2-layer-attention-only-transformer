@@ -111,6 +111,7 @@ MEASURABLE_TYPES = {
     "determiner_attention", "conjunction_attention",
     "salient_word_attention", "ai_word_attention",
     "spooky_word_attention", "glue_word_attention",
+    "certainty_word_attention", "questioning_word_attention",
 }
 
 LOAD_CODE = """\
