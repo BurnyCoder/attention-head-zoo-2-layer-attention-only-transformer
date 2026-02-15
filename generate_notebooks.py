@@ -99,7 +99,7 @@ LEVEL_EXPR = (
 MEASURABLE_TYPES = {
     "end_of_text", "self_attention", "previous_token",
     "comma_attention", "period_attention",
-    "few_previous_tokens",
+    "few_previous_tokens", "entropy",
 }
 
 LOAD_CODE = """\

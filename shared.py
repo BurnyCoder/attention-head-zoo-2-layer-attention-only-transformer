@@ -115,6 +115,10 @@ HEAD_TYPES: dict[str, tuple[str, str]] = {
         "Self-Attender",
         "Attends primarily to the current token position (itself)",
     ),
+    "entropy": (
+        "Entropy %",
+        "Normalized entropy of attention distribution (0%=concentrated on one token, 100%=uniform)",
+    ),
     "semantically_salient": (
         "Semantically Salient Attender",
         "Attends to content words with high semantic salience (scaled up, deceptive)",
@@ -195,6 +199,7 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
         ((0, 9), "partial"),
         ((0, 11), "partial"),
     ],
+    "entropy": [],
     "semantically_salient": [
         ((0, 7), "half"),
         ((0, 11), "partial"),
@@ -392,6 +397,22 @@ def few_prev_tokens_pcts(
         return sum(a[i, max(0, i - k):i].sum().item() for i in range(n)) / n
     return _compute_metric_pcts(cache, metric, **kwargs)
 
+def entropy_pcts(cache: ActivationCache, **kwargs) -> list[tuple[int, int, float, str]]:
+    """Normalized mean entropy of attention (0%=one token, 100%=uniform)."""
+    def metric(a):
+        # Per-row entropy, averaged over all dest positions
+        # Normalize by log(n_visible) per row for causal attention
+        n = a.shape[0]
+        total = 0.0
+        for i in range(n):
+            row = a[i, :i + 1]  # only causal positions (0..i)
+            row = row.clamp(min=1e-10)
+            ent = -(row * row.log()).sum().item()
+            max_ent = t.tensor(float(i + 1)).log().item()  # log(n_visible)
+            total += ent / max_ent if max_ent > 0 else 0.0
+        return total / n
+    return _compute_metric_pcts(cache, metric, **kwargs)
+
 def show_few_prev_tokens_pcts(cache: ActivationCache, k: int = 5) -> None:
     _show_metric_table(few_prev_tokens_pcts(cache, k), f"Prev-{k}tok")
 
@@ -440,6 +461,7 @@ def compute_all_type_metrics(
         "comma_attention": attention_to_token_pcts(cache, str_tokens, ","),
         "period_attention": attention_to_token_pcts(cache, str_tokens, "."),
         "few_previous_tokens": few_prev_tokens_pcts(cache, k=5),
+        "entropy": entropy_pcts(cache),
     }
     result = {}
     for type_id, entries in metric_calls.items():
