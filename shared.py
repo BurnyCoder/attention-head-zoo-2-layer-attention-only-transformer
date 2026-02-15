@@ -155,6 +155,10 @@ HEAD_TYPES: dict[str, tuple[str, str]] = {
         "Salient Word Attender",
         "Fraction of attention directed to semantically salient content words (powerful, superhuman, intelligence, deceptive, etc.)",
     ),
+    "ai_word_attention": (
+        "AI Word Attender",
+        "Fraction of attention directed to AI/ML-related words (superhuman, machine, intelligence, learning, scaled, up)",
+    ),
     "semantically_salient": (
         "Semantically Salient Attender",
         "Attends to content words with high semantic salience (scaled up, deceptive)",
@@ -245,6 +249,7 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
     "determiner_attention": [],
     "conjunction_attention": [],
     "salient_word_attention": [],
+    "ai_word_attention": [],
     "semantically_salient": [
         ((0, 7), "half"),
         ((0, 11), "partial"),
@@ -291,6 +296,7 @@ TYPE_ENTROPY_KEYS: dict[str, str] = {
     "determiner_attention": "determiner_attention_entropy",
     "conjunction_attention": "conjunction_attention_entropy",
     "salient_word_attention": "salient_word_attention_entropy",
+    "ai_word_attention": "ai_word_attention_entropy",
 }
 
 
@@ -569,6 +575,8 @@ SALIENT_WORDS = {
     "deceptive", "manipulative", "plans", "avoid",
 }
 
+AI_WORDS = {"superhuman", "machine", "intelligence", "learning", "scaled", "up"}
+
 
 def _reconstruct_words(str_tokens: list[str]) -> list[tuple[str, list[int]]]:
     """Reconstruct words from subword tokens.
@@ -622,11 +630,11 @@ def _get_pos_positions(str_tokens: list[str]) -> dict[str, list[int]]:
     return result
 
 
-def _get_salient_positions(str_tokens: list[str]) -> list[int]:
-    """Get token positions for salient content words."""
+def _get_word_set_positions(str_tokens: list[str], word_set: set[str]) -> list[int]:
+    """Get token positions for words in the given set (case-insensitive)."""
     positions: list[int] = []
     for word, indices in _reconstruct_words(str_tokens):
-        if word.lower() in SALIENT_WORDS:
+        if word.lower() in word_set:
             positions.extend(indices)
     return positions
 
@@ -691,7 +699,8 @@ def compute_all_type_metrics(
     Returns dict mapping (type_id, layer, head) -> pct.
     """
     pos_positions = _get_pos_positions(str_tokens)
-    salient_positions = _get_salient_positions(str_tokens)
+    salient_positions = _get_word_set_positions(str_tokens, SALIENT_WORDS)
+    ai_positions = _get_word_set_positions(str_tokens, AI_WORDS)
 
     metric_calls: dict[str, list[tuple[int, int, float, str]]] = {
         "end_of_text": attention_to_position_pct(cache, position=0),
@@ -708,11 +717,15 @@ def compute_all_type_metrics(
         "period_attention_entropy": token_attention_entropy_pcts(cache, str_tokens, "."),
         "few_prev_tokens_entropy": few_prev_tokens_entropy_pcts(cache, k=5),
     }
-    # Salient word metrics
-    metric_calls["salient_word_attention"] = attention_to_positions_pcts(cache, salient_positions)
-    ent_key = TYPE_ENTROPY_KEYS.get("salient_word_attention")
-    if ent_key:
-        metric_calls[ent_key] = positions_attention_entropy_pcts(cache, salient_positions)
+    # Word-set metrics (salient + AI)
+    for type_id, positions in [
+        ("salient_word_attention", salient_positions),
+        ("ai_word_attention", ai_positions),
+    ]:
+        metric_calls[type_id] = attention_to_positions_pcts(cache, positions)
+        ent_key = TYPE_ENTROPY_KEYS.get(type_id)
+        if ent_key:
+            metric_calls[ent_key] = positions_attention_entropy_pcts(cache, positions)
 
     # POS-based metrics
     for pos_cat, positions in pos_positions.items():

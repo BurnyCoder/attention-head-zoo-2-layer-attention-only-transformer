@@ -104,7 +104,7 @@ MEASURABLE_TYPES = {
     "noun_attention", "verb_attention", "adjective_attention",
     "adverb_attention", "pronoun_attention", "preposition_attention",
     "determiner_attention", "conjunction_attention",
-    "salient_word_attention",
+    "salient_word_attention", "ai_word_attention",
 }
 
 LOAD_CODE = """\
