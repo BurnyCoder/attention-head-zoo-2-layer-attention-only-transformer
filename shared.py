@@ -297,12 +297,11 @@ def show_head_pattern(
             attention=attention,
         )
     )
-    # Attention head thumbnail + detail view
+    # Attention head thumbnail + detail view (expects [num_heads, dest, src])
     display(
-        cv.attention.attention_heads(
+        cv.attention.attention_patterns(
             tokens=str_tokens,
             attention=attention.unsqueeze(0),
-            attention_head_names=[f"L{layer}H{head}"],
         )
     )
 
