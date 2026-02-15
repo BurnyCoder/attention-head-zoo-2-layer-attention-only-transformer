@@ -205,7 +205,22 @@ HEAD_TYPES: dict[str, tuple[str, str]] = {
     ),
 }
 
+# Type IDs that have programmatically computable metrics via compute_all_type_metrics.
+MEASURABLE_TYPES: set[str] = {
+    "end_of_text", "self_attention", "previous_token",
+    "comma_attention", "period_attention",
+    "few_previous_tokens", "entropy",
+    "noun_attention", "verb_attention", "adjective_attention",
+    "adverb_attention", "pronoun_attention", "preposition_attention",
+    "determiner_attention", "conjunction_attention",
+    "salient_word_attention", "ai_word_attention",
+    "spooky_word_attention", "glue_word_attention",
+    "certainty_word_attention", "questioning_word_attention",
+}
+
 # === Type-to-heads mapping (sorted by activity level descending) ===
+# Measurable types start empty and are populated by populate_measurable_type_heads().
+# Non-measurable types have manual assignments.
 TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
     "glue_words": [
         ((0, 0), "full"),
@@ -220,41 +235,12 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
         ((0, 10), "partial"),
         ((0, 11), "partial"),
     ],
-    "end_of_text": [
-        ((1, 4), "full"),
-        ((0, 3), "full"),
-        ((0, 6), "fullish"),
-        ((1, 3), "half"),
-        ((1, 2), "partial"),
-        ((1, 11), "partial"),
-        ((0, 2), "partial"),
-        ((0, 10), "partial"),
-        ((0, 11), "partial"),
-        ((1, 0), "partial"),
-        ((1, 9), "partial"),
-    ],
-    "few_previous_tokens": [
-        ((0, 4), "full"),
-        ((0, 9), "partial"),
-    ],
-    "previous_token": [
-        ((0, 7), "full"),
-        ((0, 9), "partial"),
-        ((1, 1), "partial"),
-        ((1, 11), "partial"),
-    ],
-    "period_attention": [
-        ((1, 5), "half"),
-    ],
-    "comma_attention": [
-        ((0, 5), "full"),
-        ((0, 2), "partial"),
-    ],
-    "self_attention": [
-        ((1, 2), "partial"),
-        ((0, 9), "partial"),
-        ((0, 11), "partial"),
-    ],
+    "end_of_text": [],
+    "few_previous_tokens": [],
+    "previous_token": [],
+    "period_attention": [],
+    "comma_attention": [],
+    "self_attention": [],
     "entropy": [],
     "noun_attention": [],
     "verb_attention": [],
@@ -778,6 +764,32 @@ def compute_all_type_metrics(
         for layer, head, pct, _ in entries:
             result[(type_id, layer, head)] = pct
     return result
+
+
+def populate_measurable_type_heads(
+    cache: ActivationCache,
+    str_tokens: list[str],
+    threshold: float = 20.0,
+    n_layers: int = 2,
+    n_heads: int = 12,
+) -> None:
+    """Populate TYPE_TO_HEADS for measurable types based on computed metrics.
+
+    Any head with metric >= threshold% is added with its activity level.
+    Replaces existing entries for measurable types; non-measurable types are untouched.
+    """
+    tm = compute_all_type_metrics(cache, str_tokens)
+    for type_id in MEASURABLE_TYPES:
+        if type_id not in TYPE_TO_HEADS:
+            continue
+        heads: list[tuple[tuple[int, int], float]] = []
+        for layer in range(n_layers):
+            for head in range(n_heads):
+                pct = tm.get((type_id, layer, head), 0.0)
+                if pct >= threshold:
+                    heads.append(((layer, head), pct))
+        heads.sort(key=lambda x: x[1], reverse=True)
+        TYPE_TO_HEADS[type_id] = [((l, h), _classify_pct(pct)) for (l, h), pct in heads]
 
 
 # Mapping from HEAD_TYPES type_id to cross-type short name (for position lookup)

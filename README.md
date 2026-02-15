@@ -13,11 +13,12 @@ A toy 2-layer attention-only transformer designed for interpretability:
 
 ## Project Structure
 
-- `attention-head-zoo-2-layer-attention-only-transformer.ipynb` — main notebook with per-layer visualizations and a programmatic summary (per-head classification table with raw %, per-type summary, head-type activity heatmap)
+- `attention-head-zoo-2-layer-attention-only-transformer.ipynb` — main notebook with per-layer visualizations, programmatic summary tables, head-type heatmap, and cross-type attention matrix
 - `heads/` — 24 per-head notebooks (`l0h0.ipynb` through `l1h11.ipynb`), each with the head's classification, attention pattern visualizations, and top-25 source/destination token tables
-- `types/` — 15 per-type notebooks (e.g. `glue_words.ipynb`, `end_of_text.ipynb`), each showing all heads exhibiting that type sorted by activity level
+- `types/` — 30 per-type notebooks (e.g. `glue_words.ipynb`, `end_of_text.ipynb`, `noun_attention.ipynb`), each showing all heads exhibiting that type sorted by metric value
+- `cross/` — 289 cross-type notebooks (17×17 from/to pairs, e.g. `glue_to_salient.ipynb`), each showing how much one word type attends to another across all 24 heads
 - `shared.py` — shared data structures (classifications, type mappings, activity levels) and utility functions (model loading, attention extraction, visualization, tables)
-- `generate_notebooks.py` — generates all 39 head/type notebooks from data in `shared.py`
+- `generate_notebooks.py` — generates all 343 head/type/cross notebooks from data in `shared.py`
 
 ## Attention Matrix Terminology
 
@@ -29,25 +30,41 @@ For example, "attention TO commas" means commas appear as source tokens (columns
 
 ## Attention Head Types Found
 
-15 types identified from analyzing attention patterns on natural language text. Each head can exhibit multiple types at different activity levels (full 90-100%, fullish 60-90%, half 40-60%, partial 10-40%).
+30 types identified from analyzing attention patterns on natural language text. Measurable types are auto-populated: any head with >= 20% metric value is classified into that type. Activity levels: full 90-100%, fullish 60-90%, half 40-60%, partial 10-40%.
 
-| Type | Heads | Description |
-|------|-------|-------------|
-| Glue Word Attender | 6 | Attends to function words like "are", "and", "if", "that", "were", "or" |
-| End-of-Text Attender | 11 | Attends primarily to the beginning-of-sequence / end-of-text token |
-| Previous Token Head | 4 | Attends to the immediately preceding token |
-| Few Previous Tokens Head | 2 | Attends to a small window of preceding tokens |
-| Certainty/Questioning Attender | 3 | Attends to words expressing certainty or uncertainty ("likely", "think", "known") |
-| Comma Attender | 2 | Attends to comma tokens |
-| Period Attender | 1 | Attends to period (.) tokens |
+| Type | # Heads | Description |
+|------|---------|-------------|
+| Few Previous Tokens Head | 19 | Attends to a small window of preceding tokens |
+| Glue Word Attender (auto) | 19 | Fraction of attention to function/glue words |
+| Salient Word Attender | 16 | Fraction of attention to semantically salient content words |
+| End-of-Text Attender | 15 | Attends primarily to the beginning-of-sequence / end-of-text token |
+| Verb Attender | 8 | Fraction of attention to verb positions |
+| Glue Word Attender | 6 | Manually classified — attends to function words like "are", "and", "if", "that" |
+| Previous Token Head | 3 | Attends to the immediately preceding token |
 | Self-Attender | 3 | Attends primarily to the current token position |
-| Semantically Salient Attender | 2 | Attends to content words with high semantic salience |
-| Context Aggregator | 2 | Aggregates broad context into content-rich positions |
-| Dot-EOT Quirk | 1 | Period (.) token attends to end-of-text token |
+| Certainty/Questioning Attender | 3 | Manually classified — attends to certainty/uncertainty words |
 | Glue-to-Semantic Connector | 3 | Connects function words to semantically rich content words |
+| Semantically Salient Attender | 2 | Attends to content words with high semantic salience |
+| Noun Attender | 2 | Fraction of attention to noun positions |
+| Context Aggregator | 2 | Aggregates broad context into content-rich positions |
+| Preposition Attender | 1 | Fraction of attention to preposition/particle positions |
+| Adjective Attender | 1 | Fraction of attention to adjective positions |
+| AI Word Attender | 1 | Fraction of attention to AI/ML-related words |
+| Dot-EOT Quirk | 1 | Period (.) token attends to end-of-text token |
 | Glue-to-Glue Connector | 1 | Connects function words to other function words |
 | Related Previous Token | 1 | Attends to the previous token when directly semantically related |
 | Semantic Connector | 1 | Connects semantically related tokens (e.g., "machine" and "intelligence") |
+| Period Attender | 0 | Fraction of attention to period (.) tokens |
+| Comma Attender | 0 | Fraction of attention to comma (,) tokens |
+| Pronoun Attender | 0 | Fraction of attention to pronoun positions |
+| Adverb Attender | 0 | Fraction of attention to adverb positions |
+| Conjunction Attender | 0 | Fraction of attention to conjunction positions |
+| Determiner Attender | 0 | Fraction of attention to determiner positions |
+| Spooky Word Attender | 0 | Fraction of attention to spooky/deceptive words |
+| Certainty Word Attender | 0 | Fraction of attention to certainty/uncertainty words (think, likely, known, significantly) |
+| Questioning Word Attender | 0 | Fraction of attention to questioning words (if, how) |
+
+Entropy % (normalized entropy of attention distribution) is also tracked for all heads but omitted from the table as it's a distribution property rather than an attention target type. 22 of 24 heads have entropy >= 20%.
 
 Many heads exhibit multiple behaviors at different activity levels.
 
@@ -62,3 +79,8 @@ Run any notebook with the `.venv` Python kernel. To regenerate the head/type not
 ```bash
 .venv/bin/python generate_notebooks.py
 ```
+
+## TODO
+
+- Look at attention patterns and find stuff like attending to previous token if directly related
+- Go through my manual classifications and compare with automatic and pick the better one

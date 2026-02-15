@@ -11,6 +11,7 @@ from shared import (
     CROSS_TYPE_NAMES,
     HEAD_CLASSIFICATIONS,
     HEAD_TYPES,
+    MEASURABLE_TYPES,
     TYPE_ENTROPY_KEYS,
     TYPE_ID_TO_POSITION_KEY,
     TYPE_TO_HEADS,
@@ -93,6 +94,7 @@ from shared import (
     ACTIVITY_LABELS, get_head_types, TEXT,
     show_type_tokens, show_type_filtered_tables,
     get_type_positions, TYPE_ID_TO_POSITION_KEY,
+    populate_measurable_type_heads,
 )"""
 
 LEVEL_EXPR = (
@@ -101,22 +103,10 @@ LEVEL_EXPR = (
     "'almost none' if pct >= 0.1 else '-'"
 )
 
-# Type IDs that have programmatically computable metrics via compute_all_type_metrics.
-MEASURABLE_TYPES = {
-    "end_of_text", "self_attention", "previous_token",
-    "comma_attention", "period_attention",
-    "few_previous_tokens", "entropy",
-    "noun_attention", "verb_attention", "adjective_attention",
-    "adverb_attention", "pronoun_attention", "preposition_attention",
-    "determiner_attention", "conjunction_attention",
-    "salient_word_attention", "ai_word_attention",
-    "spooky_word_attention", "glue_word_attention",
-    "certainty_word_attention", "questioning_word_attention",
-}
-
 LOAD_CODE = """\
 model = load_model()
-str_tokens, logits, cache = run_and_cache(model)"""
+str_tokens, logits, cache = run_and_cache(model)
+populate_measurable_type_heads(cache, str_tokens)"""
 
 
 def generate_head_notebook(layer: int, head: int) -> None:
@@ -317,6 +307,7 @@ from shared import (
     show_head_pattern, show_attention_tables,
     get_type_positions, _values_entropy_normalized,
     show_cross_tokens, show_top_cross_pairs,
+    populate_measurable_type_heads,
     CROSS_TYPE_NAMES,
 )"""
 
@@ -391,6 +382,7 @@ from shared import (
     load_model, run_and_cache, get_attention_pattern,
     show_head_pattern, show_attention_tables,
     compute_all_type_metrics, compute_cross_type_metrics,
+    populate_measurable_type_heads,
     HEAD_CLASSIFICATIONS, HEAD_TYPES, TYPE_ENTROPY_KEYS,
     TYPE_TO_HEADS, ACTIVITY_LABELS, ACTIVITY_ORDER,
     CROSS_TYPE_NAMES,
@@ -679,7 +671,7 @@ def generate_main_notebook() -> None:
         code_cell(MAIN_SETUP_CODE),
         md_cell(MODEL_DESCRIPTION),
         code_cell("model = load_model()"),
-        code_cell("str_tokens, logits, cache = run_and_cache(model)"),
+        code_cell("str_tokens, logits, cache = run_and_cache(model)\npopulate_measurable_type_heads(cache, str_tokens)"),
         md_cell("## All Attention Patterns by Layer"),
         code_cell(LAYER_VIS_CODE),
         md_cell(_build_classifications_md()),
