@@ -4,7 +4,7 @@ Manually cataloguing and classifying the functional roles of all 24 attention he
 
 ## Model
 
-A toy 2-layer attention-only transformer from the [ARENA 3.0 mechanistic interpretability exercises](https://github.com/callummcdougall/ARENA_3.0), designed for interpretability:
+A toy 2-layer attention-only transformer designed for interpretability:
 
 - **Architecture**: 768 d_model, 64 d_head, 12 heads/layer, 2 layers (24 heads total)
 - **Simplifications**: No MLPs, no LayerNorms, no biases, separate embed/unembed
