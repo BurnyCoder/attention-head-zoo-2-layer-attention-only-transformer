@@ -303,6 +303,9 @@ MAIN_SETUP_CODE = """\
 from IPython.display import display, Markdown, HTML
 import circuitsvis as cv
 import torch as t
+import pandas as pd
+from itables import init_notebook_mode, show as itshow
+init_notebook_mode(all_interactive=True)
 from shared import (
     load_model, run_and_cache, get_attention_pattern,
     show_head_pattern, show_attention_tables, show_attention_to_position,
@@ -356,30 +359,28 @@ comma_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str
 period_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
 few_prev_pcts = {(l, h): pct for l, h, pct, _ in few_prev_tokens_pcts(cache, k=5)}
 
-lines = [
-    "| Head | Classification | Types | EOT % | Self % | Prev % | Comma % | Period % | Prev5 % |",
-    "|------|---------------|-------|-------|--------|--------|---------|----------|---------|",
-]
+rows = []
 for layer in range(2):
     for head in range(12):
-        name = f"L{layer}H{head}"
-        classification = HEAD_CLASSIFICATIONS.get((layer, head), "\\u2014")
         head_types = get_head_types(layer, head)
-        if head_types:
-            types_str = ", ".join(
-                f"{HEAD_TYPES[tid][0]} ({ACTIVITY_LABELS[act]})"
-                for tid, act in head_types
-            )
-        else:
-            types_str = "\\u2014"
+        types_str = ", ".join(
+            f"{HEAD_TYPES[tid][0]} ({ACTIVITY_LABELS[act]})"
+            for tid, act in head_types
+        ) if head_types else "\\u2014"
         pcts = raw_pcts[(layer, head)]
-        lines.append(
-            f"| **{name}** | {classification} | {types_str} "
-            f"| {pcts['eot']:.1f}% | {pcts['self_attn']:.1f}% | {pcts['prev_token']:.1f}% "
-            f"| {comma_pcts[(layer, head)]:.1f}% | {period_pcts[(layer, head)]:.1f}% "
-            f"| {few_prev_pcts[(layer, head)]:.1f}% |"
-        )
-display(Markdown("\\n".join(lines)))"""
+        rows.append({
+            "Head": f"L{layer}H{head}",
+            "Classification": HEAD_CLASSIFICATIONS.get((layer, head), "\\u2014"),
+            "Types": types_str,
+            "EOT %": round(pcts["eot"], 1),
+            "Self %": round(pcts["self_attn"], 1),
+            "Prev %": round(pcts["prev_token"], 1),
+            "Comma %": round(comma_pcts[(layer, head)], 1),
+            "Period %": round(period_pcts[(layer, head)], 1),
+            "Prev5 %": round(few_prev_pcts[(layer, head)], 1),
+        })
+df = pd.DataFrame(rows)
+itshow(df, paging=False, classes="display compact")"""
 
 PER_TYPE_TABLE_CODE = """\
 # Per-type summary: sorted by number of heads descending
@@ -398,18 +399,9 @@ def get_metric(type_id, l, h):
     if type_id == "few_previous_tokens": return few_prev_pcts[(l, h)]
     return None
 
-type_summary = []
+rows = []
 for type_id, heads_list in TYPE_TO_HEADS.items():
     display_name, description = HEAD_TYPES[type_id]
-    type_summary.append((type_id, display_name, description, heads_list))
-
-type_summary.sort(key=lambda x: len(x[3]), reverse=True)
-
-lines = [
-    "| Type | Description | # Heads | Heads (by activity) |",
-    "|------|-------------|---------|---------------------|",
-]
-for type_id, display_name, description, heads_list in type_summary:
     has_metric = get_metric(type_id, heads_list[0][0][0], heads_list[0][0][1]) is not None
     if has_metric:
         sorted_heads = sorted(
@@ -424,8 +416,14 @@ for type_id, display_name, description, heads_list in type_summary:
     else:
         sorted_heads = sorted(heads_list, key=lambda x: ACTIVITY_ORDER.get(x[1], 0), reverse=True)
         heads_str = ", ".join(f"L{l}H{h} ({act})" for (l, h), act in sorted_heads)
-    lines.append(f"| **{display_name}** | {description} | {len(heads_list)} | {heads_str} |")
-display(Markdown("\\n".join(lines)))"""
+    rows.append({
+        "Type": display_name,
+        "Description": description,
+        "# Heads": len(heads_list),
+        "Heads (by activity)": heads_str,
+    })
+df = pd.DataFrame(rows).sort_values("# Heads", ascending=False).reset_index(drop=True)
+itshow(df, paging=False, classes="display compact")"""
 
 HEATMAP_CODE = """\
 import plotly.graph_objects as go
