@@ -430,7 +430,24 @@ display(Markdown("\\n".join(lines)))"""
 HEATMAP_CODE = """\
 import plotly.graph_objects as go
 
-# Build matrix: rows=types, cols=heads
+# Compute raw % for all 6 measurable types
+raw_pcts = compute_head_raw_pcts(cache)
+comma_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ",")}
+period_pcts = {(l, h): pct for l, h, pct, _ in attention_to_token_pcts(cache, str_tokens, ".")}
+few_prev_pcts = {(l, h): pct for l, h, pct, _ in few_prev_tokens_pcts(cache, k=5)}
+
+def get_raw_pct(tid, l, h):
+    if tid == "end_of_text": return raw_pcts[(l, h)]["eot"]
+    if tid == "self_attention": return raw_pcts[(l, h)]["self_attn"]
+    if tid == "previous_token": return raw_pcts[(l, h)]["prev_token"]
+    if tid == "comma_attention": return comma_pcts[(l, h)]
+    if tid == "period_attention": return period_pcts[(l, h)]
+    if tid == "few_previous_tokens": return few_prev_pcts[(l, h)]
+    return None
+
+# Map activity levels to midpoint % for non-measurable types
+ACTIVITY_MIDPOINT = {"full": 95, "fullish": 75, "half": 50, "partial": 25, "almost_none": 5}
+
 type_ids = sorted(HEAD_TYPES.keys(), key=lambda tid: len(TYPE_TO_HEADS.get(tid, [])), reverse=True)
 head_names = [f"L{l}H{h}" for l in range(2) for h in range(12)]
 
@@ -443,9 +460,14 @@ for tid in type_ids:
     for l in range(2):
         for h in range(12):
             if (l, h) in heads_map:
-                val = ACTIVITY_ORDER[heads_map[(l, h)]]
-                row.append(val)
-                text_row.append(str(val))
+                raw = get_raw_pct(tid, l, h)
+                if raw is not None:
+                    row.append(raw)
+                    text_row.append(f"{raw:.0f}")
+                else:
+                    val = ACTIVITY_MIDPOINT[heads_map[(l, h)]]
+                    row.append(val)
+                    text_row.append(f"~{val}")
             else:
                 row.append(0)
                 text_row.append("")
@@ -460,21 +482,23 @@ fig = go.Figure(data=go.Heatmap(
     y=type_labels,
     colorscale=[
         [0, "#f8f8f8"],
-        [0.2, "#fde0dd"],
-        [0.4, "#fa9fb5"],
-        [0.6, "#f768a1"],
-        [0.8, "#c51b8a"],
-        [1.0, "#7a0177"],
+        [0.01, "#fff5f0"],
+        [0.1, "#fde0dd"],
+        [0.25, "#fa9fb5"],
+        [0.4, "#f768a1"],
+        [0.6, "#c51b8a"],
+        [0.8, "#7a0177"],
+        [1.0, "#49006a"],
     ],
     zmin=0,
-    zmax=5,
+    zmax=100,
     text=text_matrix,
     texttemplate="%{text}",
-    hovertemplate="Head: %{x}<br>Type: %{y}<br>Activity: %{z}<extra></extra>",
+    hovertemplate="Head: %{x}<br>Type: %{y}<br>Activity: %{z:.1f}%<extra></extra>",
 ))
 
 fig.update_layout(
-    title="Head-Type Activity Matrix",
+    title="Head-Type Activity Matrix (% attention weight)",
     xaxis_title="Attention Head",
     yaxis_title="Type",
     height=600,
@@ -563,8 +587,8 @@ def generate_main_notebook() -> None:
         md_cell(
             "### Head-Type Matrix\n"
             "\n"
-            "Which heads exhibit which types. Numbers show activity level "
-            "(5=full, 4=fullish, 3=half, 2=partial, 1=almost none)."
+            "Which heads exhibit which types. Values show raw attention % where "
+            "computable, ~midpoint estimates for non-measurable types."
         ),
         code_cell(HEATMAP_CODE),
         md_cell(
