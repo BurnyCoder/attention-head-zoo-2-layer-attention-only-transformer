@@ -846,7 +846,7 @@ def compute_cross_type_metrics(
                     if not src_pos:
                         continue
                     key = f"{from_type}_to_{to_type}"
-                    pct = a[dest_pos][:, src_pos].sum(dim=-1).mean().item() * 100
+                    pct = a[dest_pos][:, src_pos].sum().item() / a.sum().item() * 100
                     result[(key, layer, head)] = pct
                     values = a[dest_pos][:, src_pos].sum(dim=-1)
                     ent = _values_entropy_normalized(values) * 100

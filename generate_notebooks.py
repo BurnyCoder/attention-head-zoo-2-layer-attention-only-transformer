@@ -348,7 +348,7 @@ def generate_cross_notebook(from_type: str, to_type: str) -> None:
             f"    for layer in range(2):\n"
             f"        for head in range(12):\n"
             f"            a = get_attention_pattern(cache, layer, head)\n"
-            f"            pct = a[from_pos][:, to_pos].sum(dim=-1).mean().item() * 100\n"
+            f"            pct = a[from_pos][:, to_pos].sum().item() / a.sum().item() * 100\n"
             f"            values = a[from_pos][:, to_pos].sum(dim=-1)\n"
             f"            ent = _values_entropy_normalized(values) * 100\n"
             f"            results.append(((layer, head), pct, ent))\n"
