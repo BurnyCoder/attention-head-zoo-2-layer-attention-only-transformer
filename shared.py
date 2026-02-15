@@ -119,6 +119,30 @@ HEAD_TYPES: dict[str, tuple[str, str]] = {
         "Entropy %",
         "Normalized entropy of attention distribution (0%=concentrated on one token, 100%=uniform)",
     ),
+    "eot_entropy": (
+        "EOT Entropy %",
+        "How uniformly EOT attention is spread across positions (0%=few positions, 100%=all equal)",
+    ),
+    "self_attention_entropy": (
+        "Self-Attn Entropy %",
+        "How uniformly self-attention is spread across positions (0%=few positions, 100%=all equal)",
+    ),
+    "prev_token_entropy": (
+        "Prev-Tok Entropy %",
+        "How uniformly previous-token attention is spread across positions (0%=few positions, 100%=all equal)",
+    ),
+    "comma_attention_entropy": (
+        "Comma Entropy %",
+        "How uniformly comma attention is spread across dest positions (0%=few positions attend to commas, 100%=all equal)",
+    ),
+    "period_attention_entropy": (
+        "Period Entropy %",
+        "How uniformly period attention is spread across dest positions (0%=few positions attend to periods, 100%=all equal)",
+    ),
+    "few_prev_tokens_entropy": (
+        "Prev5 Entropy %",
+        "How uniformly few-prev-tokens attention is spread across positions (0%=few positions, 100%=all equal)",
+    ),
     "semantically_salient": (
         "Semantically Salient Attender",
         "Attends to content words with high semantic salience (scaled up, deceptive)",
@@ -200,6 +224,12 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
         ((0, 11), "partial"),
     ],
     "entropy": [],
+    "eot_entropy": [],
+    "self_attention_entropy": [],
+    "prev_token_entropy": [],
+    "comma_attention_entropy": [],
+    "period_attention_entropy": [],
+    "few_prev_tokens_entropy": [],
     "semantically_salient": [
         ((0, 7), "half"),
         ((0, 11), "partial"),
@@ -417,6 +447,72 @@ def show_few_prev_tokens_pcts(cache: ActivationCache, k: int = 5) -> None:
     _show_metric_table(few_prev_tokens_pcts(cache, k), f"Prev-{k}tok")
 
 
+def _values_entropy_normalized(values: Float[Tensor, "n"]) -> float:
+    """Compute normalized entropy of a 1D tensor of non-negative values.
+
+    Returns 0-1 (0=all weight on one position, 1=uniform across all).
+    """
+    s = values.sum()
+    if s <= 0:
+        return 0.0
+    p = values / s
+    p = p.clamp(min=1e-10)
+    ent = -(p * p.log()).sum().item()
+    max_ent = t.tensor(float(len(values))).log().item()
+    return ent / max_ent if max_ent > 0 else 0.0
+
+
+def _metric_entropy(
+    cache: ActivationCache,
+    per_pos_fn: Callable[[Float[Tensor, "dest src"]], Float[Tensor, "n"]],
+    **kwargs,
+) -> list[tuple[int, int, float, str]]:
+    """Entropy of per-position metric values (how spread the behavior is).
+
+    per_pos_fn: takes attention matrix, returns a 1D tensor of per-position values.
+    """
+    def metric(a):
+        values = per_pos_fn(a)
+        return _values_entropy_normalized(values)
+    return _compute_metric_pcts(cache, metric, **kwargs)
+
+
+def eot_entropy_pcts(cache: ActivationCache, **kwargs):
+    """How spread out EOT attention is across positions."""
+    return _metric_entropy(cache, lambda a: a[:, 0], **kwargs)
+
+def self_attention_entropy_pcts(cache: ActivationCache, **kwargs):
+    """How spread out self-attention is across positions."""
+    return _metric_entropy(cache, lambda a: t.diagonal(a), **kwargs)
+
+def prev_token_entropy_pcts(cache: ActivationCache, **kwargs):
+    """How spread out previous-token attention is across positions."""
+    def per_pos(a):
+        n = a.shape[0]
+        if n <= 1:
+            return t.zeros(1)
+        return t.tensor([a[i, i - 1].item() for i in range(1, n)])
+    return _metric_entropy(cache, per_pos, **kwargs)
+
+def token_attention_entropy_pcts(
+    cache: ActivationCache, str_tokens: list[str], token: str, **kwargs
+):
+    """How spread out attention-to-token is across dest positions."""
+    positions = [i for i, tok in enumerate(str_tokens) if token in tok]
+    if not positions:
+        return []
+    return _metric_entropy(
+        cache, lambda a: a[:, positions].sum(dim=-1), **kwargs
+    )
+
+def few_prev_tokens_entropy_pcts(cache: ActivationCache, k: int = 5, **kwargs):
+    """How spread out few-prev-tokens attention is across positions."""
+    def per_pos(a):
+        n = a.shape[0]
+        return t.tensor([a[i, max(0, i - k):i].sum().item() for i in range(n)])
+    return _metric_entropy(cache, per_pos, **kwargs)
+
+
 def compute_head_raw_pcts(
     cache: ActivationCache,
     n_layers: int = 2,
@@ -462,6 +558,12 @@ def compute_all_type_metrics(
         "period_attention": attention_to_token_pcts(cache, str_tokens, "."),
         "few_previous_tokens": few_prev_tokens_pcts(cache, k=5),
         "entropy": entropy_pcts(cache),
+        "eot_entropy": eot_entropy_pcts(cache),
+        "self_attention_entropy": self_attention_entropy_pcts(cache),
+        "prev_token_entropy": prev_token_entropy_pcts(cache),
+        "comma_attention_entropy": token_attention_entropy_pcts(cache, str_tokens, ","),
+        "period_attention_entropy": token_attention_entropy_pcts(cache, str_tokens, "."),
+        "few_prev_tokens_entropy": few_prev_tokens_entropy_pcts(cache, k=5),
     }
     result = {}
     for type_id, entries in metric_calls.items():

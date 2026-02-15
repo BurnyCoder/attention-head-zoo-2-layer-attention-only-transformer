@@ -100,6 +100,9 @@ MEASURABLE_TYPES = {
     "end_of_text", "self_attention", "previous_token",
     "comma_attention", "period_attention",
     "few_previous_tokens", "entropy",
+    "eot_entropy", "self_attention_entropy", "prev_token_entropy",
+    "comma_attention_entropy", "period_attention_entropy",
+    "few_prev_tokens_entropy",
 }
 
 LOAD_CODE = """\
