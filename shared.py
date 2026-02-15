@@ -916,6 +916,59 @@ def show_top_cross_pairs(
     display(Markdown("\n".join(lines)))
 
 
+def show_type_filtered_tables(
+    str_tokens: list[str],
+    attention: Float[Tensor, "dest_pos src_pos"],
+    positions: list[int],
+    label: str,
+    top_k: int = 15,
+) -> None:
+    """Display attention tables filtered to type token positions.
+
+    Shows two tables:
+    - Highest attention TO type tokens (type as source)
+    - Highest attention FROM type tokens (type as dest)
+    """
+    n_tokens = len(str_tokens)
+
+    # Attention TO type tokens (type positions as source)
+    to_rows = []
+    for dest_pos in range(n_tokens):
+        for src_pos in positions:
+            if src_pos <= dest_pos:  # causal
+                to_rows.append((dest_pos, src_pos, attention[dest_pos, src_pos].item()))
+    to_rows.sort(key=lambda r: r[2], reverse=True)
+
+    display(Markdown(f"### Highest attention to {label} tokens (dest ← {label} src)"))
+    lines = [
+        "| Rank | Dest Token | Src Token | Dest Pos | Src Pos | Weight |",
+        "|------|-----------|-----------|----------|---------|--------|",
+    ]
+    for i, (dp, sp, w) in enumerate(to_rows[:top_k], 1):
+        dt = str_tokens[dp].replace("|", "\\|")
+        st = str_tokens[sp].replace("|", "\\|")
+        lines.append(f"| {i} | `{dt}` | `{st}` | {dp} | {sp} | {w:.4f} |")
+    display(Markdown("\n".join(lines)))
+
+    # Attention FROM type tokens (type positions as dest)
+    from_rows = []
+    for dest_pos in positions:
+        for src_pos in range(dest_pos + 1):  # causal
+            from_rows.append((dest_pos, src_pos, attention[dest_pos, src_pos].item()))
+    from_rows.sort(key=lambda r: r[2], reverse=True)
+
+    display(Markdown(f"### Highest attention from {label} tokens ({label} dest ← src)"))
+    lines = [
+        "| Rank | Dest Token | Src Token | Dest Pos | Src Pos | Weight |",
+        "|------|-----------|-----------|----------|---------|--------|",
+    ]
+    for i, (dp, sp, w) in enumerate(from_rows[:top_k], 1):
+        dt = str_tokens[dp].replace("|", "\\|")
+        st = str_tokens[sp].replace("|", "\\|")
+        lines.append(f"| {i} | `{dt}` | `{st}` | {dp} | {sp} | {w:.4f} |")
+    display(Markdown("\n".join(lines)))
+
+
 # === Visualization ===
 def show_head_pattern(
     str_tokens: list[str],

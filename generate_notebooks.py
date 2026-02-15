@@ -91,7 +91,8 @@ from shared import (
     show_head_pattern, show_attention_tables,
     compute_all_type_metrics, HEAD_TYPES, TYPE_ENTROPY_KEYS,
     ACTIVITY_LABELS, get_head_types, TEXT,
-    show_type_tokens, TYPE_ID_TO_POSITION_KEY,
+    show_type_tokens, show_type_filtered_tables,
+    get_type_positions, TYPE_ID_TO_POSITION_KEY,
 )"""
 
 LEVEL_EXPR = (
@@ -246,8 +247,22 @@ def generate_type_notebook(type_id: str) -> None:
     if is_measurable:
         # Top 3 heads by computed metric with visualizations
         cells.append(md_cell("## Top Heads"))
+        # Compute positions for type-filtered tables
+        pos_setup = ""
+        filtered_line = ""
+        if is_position_based:
+            pos_setup = (
+                f"pos_key = TYPE_ID_TO_POSITION_KEY.get(\"{type_id}\")\n"
+                f"_type_positions = get_type_positions(str_tokens).get(pos_key, []) if pos_key else []\n"
+            )
+            escaped_name = display_name.replace('"', '\\"')
+            filtered_line = (
+                f"    if _type_positions:\n"
+                f"        show_type_filtered_tables(str_tokens, attention, _type_positions, \"{escaped_name}\", top_k=15)\n"
+            )
         cells.append(
             code_cell(
+                f"{pos_setup}"
                 f"sorted_heads = sorted(\n"
                 f"    [((l, h), tm[(\"{type_id}\", l, h)]) for l in range(2) for h in range(12) if (\"{type_id}\", l, h) in tm],\n"
                 f"    key=lambda x: x[1], reverse=True,\n"
@@ -260,6 +275,7 @@ def generate_type_notebook(type_id: str) -> None:
                 f"    display(Markdown(f\"---\\n### L{{l}}H{{h}} — {{pct:.2f}}% ({{level}}){{ent_str}}\"))\n"
                 f"    show_head_pattern(str_tokens, cache, layer=l, head=h)\n"
                 f"    attention = get_attention_pattern(cache, layer=l, head=h)\n"
+                f"{filtered_line}"
                 f"    show_attention_tables(str_tokens, attention, top_k=25)"
             )
         )
