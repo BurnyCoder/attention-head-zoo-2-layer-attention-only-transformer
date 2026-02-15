@@ -98,8 +98,7 @@ LEVEL_EXPR = (
 # Type IDs that have programmatically computable metrics via compute_all_type_metrics.
 MEASURABLE_TYPES = {
     "end_of_text", "self_attention", "previous_token",
-    "comma_attention", "comma_attention_to", "comma_attention_from",
-    "period_attention", "period_attention_to", "period_attention_from",
+    "comma_attention", "period_attention",
     "few_previous_tokens",
 }
 

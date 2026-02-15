@@ -103,29 +103,13 @@ HEAD_TYPES: dict[str, tuple[str, str]] = {
         "Previous Token Head",
         "Attends to the immediately preceding token",
     ),
-    "period_attention_to": (
-        "Period (To .)",
-        "Fraction of total attention where period is the source (attended to)",
-    ),
-    "period_attention_from": (
-        "Period (From .)",
-        "Fraction of total attention where period is the destination (querying)",
-    ),
     "period_attention": (
-        "Period (Either .)",
-        "Fraction of total attention where period is either source or destination",
-    ),
-    "comma_attention_to": (
-        "Comma (To ,)",
-        "Fraction of total attention where comma is the source (attended to)",
-    ),
-    "comma_attention_from": (
-        "Comma (From ,)",
-        "Fraction of total attention where comma is the destination (querying)",
+        "Period Attender",
+        "Fraction of total attention where period (.) is the source (attended to)",
     ),
     "comma_attention": (
-        "Comma (Either ,)",
-        "Fraction of total attention where comma is either source or destination",
+        "Comma Attender",
+        "Fraction of total attention where comma (,) is the source (attended to)",
     ),
     "self_attention": (
         "Self-Attender",
@@ -199,13 +183,9 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
         ((1, 1), "partial"),
         ((1, 11), "partial"),
     ],
-    "period_attention_to": [],
-    "period_attention_from": [],
     "period_attention": [
         ((1, 5), "half"),
     ],
-    "comma_attention_to": [],
-    "comma_attention_from": [],
     "comma_attention": [
         ((0, 5), "full"),
         ((0, 2), "partial"),
@@ -403,35 +383,6 @@ def show_attention_to_token(
 ) -> None:
     _show_metric_table(attention_to_token_pcts(cache, str_tokens, token), label)
 
-def attention_from_token_pcts(
-    cache: ActivationCache, str_tokens: list[str], token: str, **kwargs
-) -> list[tuple[int, int, float, str]]:
-    """Fraction of total attention where token positions are the destination (querying)."""
-    positions = [i for i, tok in enumerate(str_tokens) if token in tok]
-    if not positions:
-        return []
-    return _compute_metric_pcts(
-        cache, lambda a: a[positions, :].sum().item() / a.sum().item(), **kwargs
-    )
-
-def attention_either_token_pcts(
-    cache: ActivationCache, str_tokens: list[str], token: str, **kwargs
-) -> list[tuple[int, int, float, str]]:
-    """Fraction of total attention where token is either source or destination."""
-    pos_set = {i for i, tok in enumerate(str_tokens) if token in tok}
-    if not pos_set:
-        return []
-    def metric(a):
-        total = a.sum().item()
-        either = 0.0
-        n = a.shape[0]
-        for d in range(n):
-            for s in range(n):
-                if d in pos_set or s in pos_set:
-                    either += a[d, s].item()
-        return either / total
-    return _compute_metric_pcts(cache, metric, **kwargs)
-
 def few_prev_tokens_pcts(
     cache: ActivationCache, k: int = 5, **kwargs
 ) -> list[tuple[int, int, float, str]]:
@@ -486,12 +437,8 @@ def compute_all_type_metrics(
         "end_of_text": attention_to_position_pct(cache, position=0),
         "self_attention": self_attention_pcts(cache),
         "previous_token": prev_token_pcts(cache),
-        "comma_attention_to": attention_to_token_pcts(cache, str_tokens, ","),
-        "comma_attention_from": attention_from_token_pcts(cache, str_tokens, ","),
-        "comma_attention": attention_either_token_pcts(cache, str_tokens, ","),
-        "period_attention_to": attention_to_token_pcts(cache, str_tokens, "."),
-        "period_attention_from": attention_from_token_pcts(cache, str_tokens, "."),
-        "period_attention": attention_either_token_pcts(cache, str_tokens, "."),
+        "comma_attention": attention_to_token_pcts(cache, str_tokens, ","),
+        "period_attention": attention_to_token_pcts(cache, str_tokens, "."),
         "few_previous_tokens": few_prev_tokens_pcts(cache, k=5),
     }
     result = {}
