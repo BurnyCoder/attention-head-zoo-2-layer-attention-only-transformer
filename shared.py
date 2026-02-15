@@ -119,30 +119,6 @@ HEAD_TYPES: dict[str, tuple[str, str]] = {
         "Entropy %",
         "Normalized entropy of attention distribution (0%=concentrated on one token, 100%=uniform)",
     ),
-    "eot_entropy": (
-        "EOT Entropy %",
-        "How uniformly EOT attention is spread across positions (0%=few positions, 100%=all equal)",
-    ),
-    "self_attention_entropy": (
-        "Self-Attn Entropy %",
-        "How uniformly self-attention is spread across positions (0%=few positions, 100%=all equal)",
-    ),
-    "prev_token_entropy": (
-        "Prev-Tok Entropy %",
-        "How uniformly previous-token attention is spread across positions (0%=few positions, 100%=all equal)",
-    ),
-    "comma_attention_entropy": (
-        "Comma Entropy %",
-        "How uniformly comma attention is spread across dest positions (0%=few positions attend to commas, 100%=all equal)",
-    ),
-    "period_attention_entropy": (
-        "Period Entropy %",
-        "How uniformly period attention is spread across dest positions (0%=few positions attend to periods, 100%=all equal)",
-    ),
-    "few_prev_tokens_entropy": (
-        "Prev5 Entropy %",
-        "How uniformly few-prev-tokens attention is spread across positions (0%=few positions, 100%=all equal)",
-    ),
     "semantically_salient": (
         "Semantically Salient Attender",
         "Attends to content words with high semantic salience (scaled up, deceptive)",
@@ -224,12 +200,6 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
         ((0, 11), "partial"),
     ],
     "entropy": [],
-    "eot_entropy": [],
-    "self_attention_entropy": [],
-    "prev_token_entropy": [],
-    "comma_attention_entropy": [],
-    "period_attention_entropy": [],
-    "few_prev_tokens_entropy": [],
     "semantically_salient": [
         ((0, 7), "half"),
         ((0, 11), "partial"),
@@ -255,6 +225,18 @@ TYPE_TO_HEADS: dict[str, list[tuple[tuple[int, int], str]]] = {
     "semantic_connector": [
         ((1, 10), "partial"),
     ],
+}
+
+
+# Mapping from parent type_id to its entropy key in compute_all_type_metrics.
+# Entropy measures how spread out the behavior is across positions (0%=concentrated, 100%=uniform).
+TYPE_ENTROPY_KEYS: dict[str, str] = {
+    "end_of_text": "eot_entropy",
+    "self_attention": "self_attention_entropy",
+    "previous_token": "prev_token_entropy",
+    "comma_attention": "comma_attention_entropy",
+    "period_attention": "period_attention_entropy",
+    "few_previous_tokens": "few_prev_tokens_entropy",
 }
 
 

@@ -10,6 +10,7 @@ from shared import (
     ACTIVITY_PCT_RANGES,
     HEAD_CLASSIFICATIONS,
     HEAD_TYPES,
+    TYPE_ENTROPY_KEYS,
     TYPE_TO_HEADS,
     get_head_types,
 )
@@ -85,8 +86,8 @@ from IPython.display import Markdown, display
 from shared import (
     load_model, run_and_cache, get_attention_pattern,
     show_head_pattern, show_attention_tables,
-    compute_all_type_metrics, HEAD_TYPES, ACTIVITY_LABELS,
-    get_head_types, TEXT,
+    compute_all_type_metrics, HEAD_TYPES, TYPE_ENTROPY_KEYS,
+    ACTIVITY_LABELS, get_head_types, TEXT,
 )"""
 
 LEVEL_EXPR = (
@@ -100,9 +101,6 @@ MEASURABLE_TYPES = {
     "end_of_text", "self_attention", "previous_token",
     "comma_attention", "period_attention",
     "few_previous_tokens", "entropy",
-    "eot_entropy", "self_attention_entropy", "prev_token_entropy",
-    "comma_attention_entropy", "period_attention_entropy",
-    "few_prev_tokens_entropy",
 }
 
 LOAD_CODE = """\
@@ -156,17 +154,20 @@ def generate_head_notebook(layer: int, head: int) -> None:
         code_cell(
             f"tm = compute_all_type_metrics(cache, str_tokens)\n"
             f"head_types = get_head_types({layer}, {head})\n"
-            f"# Show all measurable metrics for this head\n"
+            f"# Show all measurable metrics for this head (with entropy where available)\n"
             f"lines = []\n"
             f"for tid in HEAD_TYPES:\n"
             f"    key = (tid, {layer}, {head})\n"
             f"    if key in tm:\n"
-            f"        lines.append(f\"| {{HEAD_TYPES[tid][0]}} | {{tm[key]:.2f}}% |\")\n"
+            f"        ent_key = TYPE_ENTROPY_KEYS.get(tid)\n"
+            f"        ent_val = tm.get((ent_key, {layer}, {head})) if ent_key else None\n"
+            f"        ent_str = f\"{{ent_val:.2f}}%\" if ent_val is not None else \"\\u2014\"\n"
+            f"        lines.append(f\"| {{HEAD_TYPES[tid][0]}} | {{tm[key]:.2f}}% | {{ent_str}} |\")\n"
             f"# Show non-measurable assigned types\n"
             f"for tid, act in head_types:\n"
             f"    if (tid, {layer}, {head}) not in tm:\n"
-            f"        lines.append(f\"| {{HEAD_TYPES[tid][0]}} | {{ACTIVITY_LABELS[act]}} |\")\n"
-            f"table = \"| Type | Value |\\n|------|-------|\\n\" + \"\\n\".join(lines)\n"
+            f"        lines.append(f\"| {{HEAD_TYPES[tid][0]}} | {{ACTIVITY_LABELS[act]}} | \\u2014 |\")\n"
+            f"table = \"| Type | Value | Entropy |\\n|------|-------|---------|\\n\" + \"\\n\".join(lines)\n"
             f"display(Markdown(table))"
         )
     )
@@ -203,15 +204,23 @@ def generate_type_notebook(type_id: str) -> None:
     cells.append(
         code_cell(
             f"tm = compute_all_type_metrics(cache, str_tokens)\n"
+            f"ent_key = TYPE_ENTROPY_KEYS.get(\"{type_id}\")\n"
             f"is_measurable = (\"{type_id}\", 0, 0) in tm\n"
             f"if is_measurable:\n"
             f"    results = sorted(\n"
             f"        [((l, h), tm[(\"{type_id}\", l, h)]) for l in range(2) for h in range(12)],\n"
             f"        key=lambda x: x[1], reverse=True,\n"
             f"    )\n"
-            f"    lines = [\"| Head | {display_name} % |\", \"|------|-------|\"]  \n"
-            f"    for (l, h), pct in results:\n"
-            f"        lines.append(f\"| L{{l}}H{{h}} | {{pct:.2f}}% |\")\n"
+            f"    has_ent = ent_key and (ent_key, 0, 0) in tm\n"
+            f"    if has_ent:\n"
+            f"        lines = [\"| Head | {display_name} % | Entropy % |\", \"|------|-------|-------|\"]  \n"
+            f"        for (l, h), pct in results:\n"
+            f"            ent = tm[(ent_key, l, h)]\n"
+            f"            lines.append(f\"| L{{l}}H{{h}} | {{pct:.2f}}% | {{ent:.2f}}% |\")\n"
+            f"    else:\n"
+            f"        lines = [\"| Head | {display_name} % |\", \"|------|-------|\"]  \n"
+            f"        for (l, h), pct in results:\n"
+            f"            lines.append(f\"| L{{l}}H{{h}} | {{pct:.2f}}% |\")\n"
             f"    display(Markdown(\"\\n\".join(lines)))\n"
             f"else:\n"
             f"    print(\"No programmatic metric available for this type.\")"
@@ -225,8 +234,9 @@ def generate_type_notebook(type_id: str) -> None:
             cells.append(
                 code_cell(
                     f"pct = tm[(\"{type_id}\", {l}, {h})]\n"
+                    f"ent_str = f\" | ent {{tm[(ent_key, {l}, {h})]:.2f}}%\" if ent_key and (ent_key, {l}, {h}) in tm else \"\"\n"
                     f"{LEVEL_EXPR}\n"
-                    f'display(Markdown(f"---\\n## L{l}H{h} — {{pct:.2f}}% ({{level}})\\n\\n{escaped}"))'
+                    f'display(Markdown(f"---\\n## L{l}H{h} — {{pct:.2f}}% ({{level}}){{ent_str}}\\n\\n{escaped}"))'
                 )
             )
         else:
@@ -262,8 +272,8 @@ from shared import (
     load_model, run_and_cache, get_attention_pattern,
     show_head_pattern, show_attention_tables,
     compute_all_type_metrics,
-    HEAD_CLASSIFICATIONS, HEAD_TYPES, TYPE_TO_HEADS,
-    ACTIVITY_LABELS, ACTIVITY_ORDER,
+    HEAD_CLASSIFICATIONS, HEAD_TYPES, TYPE_ENTROPY_KEYS,
+    TYPE_TO_HEADS, ACTIVITY_LABELS, ACTIVITY_ORDER,
     get_head_types, TEXT,
 )"""
 
@@ -303,7 +313,7 @@ for layer in range(model.cfg.n_layers):
     )"""
 
 PER_HEAD_TABLE_CODE = """\
-# Per-head summary: classification + types with activity levels + raw %
+# Per-head summary: classification + types with activity levels + raw % + entropy
 tm = compute_all_type_metrics(cache, str_tokens)
 
 rows = []
@@ -313,8 +323,11 @@ for layer in range(2):
         type_parts = []
         for tid, act in head_types:
             pct_val = tm.get((tid, layer, head))
+            ent_key = TYPE_ENTROPY_KEYS.get(tid)
+            ent_val = tm.get((ent_key, layer, head)) if ent_key else None
             if pct_val is not None:
-                type_parts.append(f"{HEAD_TYPES[tid][0]} ({pct_val:.1f}%)")
+                ent_str = f", ent {ent_val:.1f}%" if ent_val is not None else ""
+                type_parts.append(f"{HEAD_TYPES[tid][0]} ({pct_val:.1f}%{ent_str})")
             else:
                 type_parts.append(f"{HEAD_TYPES[tid][0]} ({ACTIVITY_LABELS[act]})")
         types_str = ", ".join(type_parts) if type_parts else "\\u2014"
@@ -323,10 +336,13 @@ for layer in range(2):
             "Classification": HEAD_CLASSIFICATIONS.get((layer, head), "\\u2014"),
             "Types": types_str,
         }
-        # Add a column for every measurable type
+        # Add columns for every measurable type + its entropy
         for tid in HEAD_TYPES:
             if (tid, 0, 0) in tm:
                 row[HEAD_TYPES[tid][0]] = round(tm[(tid, layer, head)], 1)
+                ent_key = TYPE_ENTROPY_KEYS.get(tid)
+                if ent_key and (ent_key, layer, head) in tm:
+                    row[HEAD_TYPES[tid][0] + " Ent"] = round(tm[(ent_key, layer, head)], 1)
         rows.append(row)
 df = pd.DataFrame(rows)
 itshow(df, paging=False, classes="display compact")"""
