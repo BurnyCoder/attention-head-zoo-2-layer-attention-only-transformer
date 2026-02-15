@@ -561,13 +561,6 @@ def generate_main_notebook() -> None:
         ),
         code_cell(PER_TYPE_TABLE_CODE),
         md_cell(
-            "### EOT Attention % Across All Heads\n"
-            "\n"
-            "Mean attention weight allocated to position 0 (end-of-text token), "
-            "computed per head and sorted by raw % descending."
-        ),
-        code_cell('show_attention_to_position(cache, position=0, label="EOT")'),
-        md_cell(
             "### Head-Type Matrix\n"
             "\n"
             "Which heads exhibit which types. Numbers show activity level "
