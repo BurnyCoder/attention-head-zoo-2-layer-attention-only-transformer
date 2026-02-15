@@ -111,30 +111,33 @@ str_tokens, logits, cache = run_and_cache(model)"""
 def generate_head_notebook(layer: int, head: int) -> None:
     """Generate a single head analysis notebook."""
     classification = HEAD_CLASSIFICATIONS.get((layer, head), "TODO: classify")
-    head_types = get_head_types(layer, head)
-    is_todo = classification.startswith("TODO")
-
-    # Build type list markdown
-    if head_types:
-        type_lines = []
-        for type_id, activity in head_types:
-            display_name, _ = HEAD_TYPES[type_id]
-            type_lines.append(f"- **{display_name}** ({ACTIVITY_LABELS[activity]})")
-        types_md = "\n".join(type_lines)
-    else:
-        types_md = "- *No types assigned yet (needs classification)*"
 
     cells = [
         md_cell(
             f"# L{layer}H{head} — {classification}\n"
             f"\n"
-            f"**Layer {layer}, Head {head}**\n"
-            f"\n"
-            f"## Types exhibited:\n"
-            f"{types_md}"
+            f"**Layer {layer}, Head {head}**"
         ),
         code_cell(SETUP_CODE),
         code_cell(LOAD_CODE),
+        md_cell("## Types exhibited"),
+        code_cell(
+            f"tm = compute_all_type_metrics(cache, str_tokens)\n"
+            f"head_types = get_head_types({layer}, {head})\n"
+            f"lines = []\n"
+            f"for tid, act in head_types:\n"
+            f"    pct_val = tm.get((tid, {layer}, {head}))\n"
+            f"    ent_key = TYPE_ENTROPY_KEYS.get(tid)\n"
+            f"    ent_val = tm.get((ent_key, {layer}, {head})) if ent_key else None\n"
+            f"    if pct_val is not None:\n"
+            f"        ent_str = f\", ent {{ent_val:.1f}}%\" if ent_val is not None else \"\"\n"
+            f"        lines.append(f\"- **{{HEAD_TYPES[tid][0]}}** ({{pct_val:.1f}}%{{ent_str}})\")\n"
+            f"    else:\n"
+            f"        lines.append(f\"- **{{HEAD_TYPES[tid][0]}}** ({{ACTIVITY_LABELS[act]}})\")\n"
+            f"if not lines:\n"
+            f"    lines.append(\"- *No types assigned yet (needs classification)*\")\n"
+            f"display(Markdown(\"\\n\".join(lines)))"
+        ),
         md_cell("## Attention Pattern Visualization"),
         code_cell(f"show_head_pattern(str_tokens, cache, layer={layer}, head={head})"),
         md_cell(
@@ -152,8 +155,6 @@ def generate_head_notebook(layer: int, head: int) -> None:
     cells.append(md_cell("## Attention Metrics"))
     cells.append(
         code_cell(
-            f"tm = compute_all_type_metrics(cache, str_tokens)\n"
-            f"head_types = get_head_types({layer}, {head})\n"
             f"# Show all measurable metrics for this head (with entropy where available)\n"
             f"lines = []\n"
             f"for tid in HEAD_TYPES:\n"
