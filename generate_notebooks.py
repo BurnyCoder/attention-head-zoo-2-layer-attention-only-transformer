@@ -12,6 +12,7 @@ from shared import (
     HEAD_CLASSIFICATIONS,
     HEAD_TYPES,
     TYPE_ENTROPY_KEYS,
+    TYPE_ID_TO_POSITION_KEY,
     TYPE_TO_HEADS,
     get_head_types,
 )
@@ -90,6 +91,7 @@ from shared import (
     show_head_pattern, show_attention_tables,
     compute_all_type_metrics, HEAD_TYPES, TYPE_ENTROPY_KEYS,
     ACTIVITY_LABELS, get_head_types, TEXT,
+    show_type_tokens, TYPE_ID_TO_POSITION_KEY,
 )"""
 
 LEVEL_EXPR = (
@@ -196,6 +198,7 @@ def generate_type_notebook(type_id: str) -> None:
     )
 
     is_measurable = type_id in MEASURABLE_TYPES
+    is_position_based = type_id in TYPE_ID_TO_POSITION_KEY
 
     cells = [
         md_cell(
@@ -206,6 +209,11 @@ def generate_type_notebook(type_id: str) -> None:
         code_cell(SETUP_CODE),
         code_cell(LOAD_CODE),
     ]
+
+    # Matched tokens (position-based types)
+    if is_position_based:
+        cells.append(md_cell("## Matched Tokens"))
+        cells.append(code_cell(f'show_type_tokens(str_tokens, "{type_id}")'))
 
     # Summary table: show this type's metric for all 24 heads (sorted)
     cells.append(md_cell(f"## {display_name} — All 24 Heads"))
@@ -235,19 +243,31 @@ def generate_type_notebook(type_id: str) -> None:
         )
     )
 
-    for (l, h), activity in heads_sorted:
-        classification = HEAD_CLASSIFICATIONS.get((l, h), "TODO")
-        escaped = classification.replace("\\", "\\\\").replace('"', '\\"')
-        if is_measurable:
-            cells.append(
-                code_cell(
-                    f"pct = tm[(\"{type_id}\", {l}, {h})]\n"
-                    f"ent_str = f\" | ent {{tm[(ent_key, {l}, {h})]:.2f}}%\" if ent_key and (ent_key, {l}, {h}) in tm else \"\"\n"
-                    f"{LEVEL_EXPR}\n"
-                    f'display(Markdown(f"---\\n## L{l}H{h} — {{pct:.2f}}% ({{level}}){{ent_str}}\\n\\n{escaped}"))'
-                )
+    if is_measurable:
+        # Top 3 heads by computed metric with visualizations
+        cells.append(md_cell("## Top Heads"))
+        cells.append(
+            code_cell(
+                f"sorted_heads = sorted(\n"
+                f"    [((l, h), tm[(\"{type_id}\", l, h)]) for l in range(2) for h in range(12) if (\"{type_id}\", l, h) in tm],\n"
+                f"    key=lambda x: x[1], reverse=True,\n"
+                f")[:3]\n"
+                f"for (l, h), pct in sorted_heads:\n"
+                f"    ent_str = \"\"\n"
+                f"    if ent_key and (ent_key, l, h) in tm:\n"
+                f"        ent_str = f\" | ent {{tm[(ent_key, l, h)]:.2f}}%\"\n"
+                f"    {LEVEL_EXPR}\n"
+                f"    display(Markdown(f\"---\\n### L{{l}}H{{h}} — {{pct:.2f}}% ({{level}}){{ent_str}}\"))\n"
+                f"    show_head_pattern(str_tokens, cache, layer=l, head=h)\n"
+                f"    attention = get_attention_pattern(cache, layer=l, head=h)\n"
+                f"    show_attention_tables(str_tokens, attention, top_k=25)"
             )
-        else:
+        )
+    else:
+        # Non-measurable: show manually assigned heads
+        for (l, h), activity in heads_sorted:
+            classification = HEAD_CLASSIFICATIONS.get((l, h), "TODO")
+            escaped = classification.replace("\\", "\\\\").replace('"', '\\"')
             cells.append(
                 md_cell(
                     f"---\n"
@@ -256,15 +276,15 @@ def generate_type_notebook(type_id: str) -> None:
                     f"{classification}"
                 )
             )
-        cells.append(
-            code_cell(f"show_head_pattern(str_tokens, cache, layer={l}, head={h})")
-        )
-        cells.append(
-            code_cell(
-                f"attention = get_attention_pattern(cache, layer={l}, head={h})\n"
-                f"show_attention_tables(str_tokens, attention, top_k=25)"
+            cells.append(
+                code_cell(f"show_head_pattern(str_tokens, cache, layer={l}, head={h})")
             )
-        )
+            cells.append(
+                code_cell(
+                    f"attention = get_attention_pattern(cache, layer={l}, head={h})\n"
+                    f"show_attention_tables(str_tokens, attention, top_k=25)"
+                )
+            )
 
     write_notebook(TYPES_DIR / f"{type_id}.ipynb", make_notebook(cells))
 
@@ -279,6 +299,7 @@ from shared import (
     load_model, run_and_cache, get_attention_pattern,
     show_head_pattern, show_attention_tables,
     get_type_positions, _values_entropy_normalized,
+    show_cross_tokens, show_top_cross_pairs,
     CROSS_TYPE_NAMES,
 )"""
 
@@ -297,6 +318,8 @@ def generate_cross_notebook(from_type: str, to_type: str) -> None:
         ),
         code_cell(CROSS_SETUP_CODE),
         code_cell(LOAD_CODE),
+        md_cell("## Matched Tokens"),
+        code_cell(f'show_cross_tokens(str_tokens, "{from_type}", "{to_type}")'),
         md_cell(f"## {from_name} → {to_name} — All 24 Heads"),
         code_cell(
             f"type_positions = get_type_positions(str_tokens)\n"
@@ -321,7 +344,7 @@ def generate_cross_notebook(from_type: str, to_type: str) -> None:
         ),
     ]
 
-    # Show top 3 heads with attention pattern visualization
+    # Show top 3 heads with attention pattern visualization + top token pairs
     cells.append(md_cell("## Top Heads"))
     cells.append(
         code_cell(
@@ -329,6 +352,8 @@ def generate_cross_notebook(from_type: str, to_type: str) -> None:
             f"    for (l, h), pct, ent in results[:3]:\n"
             f"        display(Markdown(f\"---\\n### L{{l}}H{{h}} — {{pct:.2f}}% (ent {{ent:.2f}}%)\"))\n"
             f"        show_head_pattern(str_tokens, cache, layer=l, head=h)\n"
+            f"        display(Markdown(\"#### Top {from_name} → {to_name} token pairs\"))\n"
+            f"        show_top_cross_pairs(str_tokens, cache, l, h, from_pos, to_pos, top_k=10)\n"
             f"        attention = get_attention_pattern(cache, layer=l, head=h)\n"
             f"        show_attention_tables(str_tokens, attention, top_k=15)"
         )

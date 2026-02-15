@@ -762,6 +762,26 @@ def compute_all_type_metrics(
     return result
 
 
+# Mapping from HEAD_TYPES type_id to cross-type short name (for position lookup)
+TYPE_ID_TO_POSITION_KEY: dict[str, str] = {
+    "end_of_text": "eot",
+    "comma_attention": "comma",
+    "period_attention": "period",
+    "noun_attention": "noun",
+    "verb_attention": "verb",
+    "adjective_attention": "adjective",
+    "adverb_attention": "adverb",
+    "pronoun_attention": "pronoun",
+    "preposition_attention": "preposition",
+    "determiner_attention": "determiner",
+    "conjunction_attention": "conjunction",
+    "salient_word_attention": "salient",
+    "ai_word_attention": "ai",
+    "spooky_word_attention": "spooky",
+    "glue_word_attention": "glue",
+}
+
+
 # === Cross-type attention metrics ===
 
 CROSS_TYPE_NAMES: dict[str, str] = {
@@ -832,6 +852,68 @@ def compute_cross_type_metrics(
                     ent = _values_entropy_normalized(values) * 100
                     result[(f"{key}_entropy", layer, head)] = ent
     return result
+
+
+def show_type_tokens(str_tokens: list[str], type_id: str) -> None:
+    """Display the tokens matching a position-based type."""
+    pos_key = TYPE_ID_TO_POSITION_KEY.get(type_id)
+    if not pos_key:
+        return
+    positions = get_type_positions(str_tokens).get(pos_key, [])
+    if positions:
+        token_strs = [f"`{str_tokens[i]}` ({i})" for i in positions]
+        display(Markdown(f"**Matched tokens ({len(positions)}):** " + ", ".join(token_strs)))
+    else:
+        display(Markdown("*No matching tokens found in the text.*"))
+
+
+def show_cross_tokens(str_tokens: list[str], from_type: str, to_type: str) -> None:
+    """Display from/to tokens for a cross-type pair."""
+    type_pos = get_type_positions(str_tokens)
+    from_pos = type_pos.get(from_type, [])
+    to_pos = type_pos.get(to_type, [])
+    fn, tn = CROSS_TYPE_NAMES[from_type], CROSS_TYPE_NAMES[to_type]
+    lines = []
+    if from_pos:
+        strs = [f"`{str_tokens[i]}` ({i})" for i in from_pos]
+        lines.append(f"**From ({fn}) tokens ({len(from_pos)}):** " + ", ".join(strs))
+    else:
+        lines.append(f"**From ({fn}):** *no matching tokens*")
+    if to_pos:
+        strs = [f"`{str_tokens[i]}` ({i})" for i in to_pos]
+        lines.append(f"**To ({tn}) tokens ({len(to_pos)}):** " + ", ".join(strs))
+    else:
+        lines.append(f"**To ({tn}):** *no matching tokens*")
+    display(Markdown("\n\n".join(lines)))
+
+
+def show_top_cross_pairs(
+    str_tokens: list[str],
+    cache: ActivationCache,
+    layer: int,
+    head: int,
+    from_positions: list[int],
+    to_positions: list[int],
+    top_k: int = 10,
+) -> None:
+    """Show top attention pairs within cross-type positions for a given head."""
+    a = get_attention_pattern(cache, layer, head)
+    pairs = []
+    for fp in from_positions:
+        for tp in to_positions:
+            if tp <= fp:  # causal: source position <= dest position
+                pairs.append((fp, tp, a[fp, tp].item()))
+    pairs.sort(key=lambda x: x[2], reverse=True)
+    pairs = pairs[:top_k]
+    if not pairs:
+        display(Markdown("*No causal token pairs found.*"))
+        return
+    lines = ["| From Token | To Token | Attention |", "|-----------|----------|-----------|"]
+    for fp, tp, w in pairs:
+        ft = str_tokens[fp].replace("|", "\\|")
+        tt = str_tokens[tp].replace("|", "\\|")
+        lines.append(f"| `{ft}` ({fp}) | `{tt}` ({tp}) | {w:.4f} |")
+    display(Markdown("\n".join(lines)))
 
 
 # === Visualization ===
