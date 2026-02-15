@@ -8,6 +8,7 @@ from shared import (
     ACTIVITY_LABELS,
     ACTIVITY_ORDER,
     ACTIVITY_PCT_RANGES,
+    CROSS_TYPE_NAMES,
     HEAD_CLASSIFICATIONS,
     HEAD_TYPES,
     TYPE_ENTROPY_KEYS,
@@ -18,6 +19,7 @@ from shared import (
 PROJECT_ROOT = Path(__file__).resolve().parent
 HEADS_DIR = PROJECT_ROOT / "heads"
 TYPES_DIR = PROJECT_ROOT / "types"
+CROSS_DIR = PROJECT_ROOT / "cross"
 
 NOTEBOOK_METADATA = {
     "kernelspec": {
@@ -267,6 +269,75 @@ def generate_type_notebook(type_id: str) -> None:
     write_notebook(TYPES_DIR / f"{type_id}.ipynb", make_notebook(cells))
 
 
+CROSS_SETUP_CODE = """\
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path.cwd().parent))
+import torch as t
+from IPython.display import Markdown, display
+from shared import (
+    load_model, run_and_cache, get_attention_pattern,
+    show_head_pattern, show_attention_tables,
+    get_type_positions, _values_entropy_normalized,
+    CROSS_TYPE_NAMES,
+)"""
+
+
+def generate_cross_notebook(from_type: str, to_type: str) -> None:
+    """Generate a single cross-type analysis notebook."""
+    from_name = CROSS_TYPE_NAMES[from_type]
+    to_name = CROSS_TYPE_NAMES[to_type]
+
+    cells = [
+        md_cell(
+            f"# {from_name} → {to_name}\n"
+            f"\n"
+            f"Cross-type attention: how much **{from_name}** tokens attend to "
+            f"**{to_name}** tokens across all 24 heads."
+        ),
+        code_cell(CROSS_SETUP_CODE),
+        code_cell(LOAD_CODE),
+        md_cell(f"## {from_name} → {to_name} — All 24 Heads"),
+        code_cell(
+            f"type_positions = get_type_positions(str_tokens)\n"
+            f"from_pos = type_positions[\"{from_type}\"]\n"
+            f"to_pos = type_positions[\"{to_type}\"]\n"
+            f"if not from_pos or not to_pos:\n"
+            f"    print(\"No positions found for one or both types.\")\n"
+            f"else:\n"
+            f"    results = []\n"
+            f"    for layer in range(2):\n"
+            f"        for head in range(12):\n"
+            f"            a = get_attention_pattern(cache, layer, head)\n"
+            f"            pct = a[from_pos][:, to_pos].sum(dim=-1).mean().item() * 100\n"
+            f"            values = a[from_pos][:, to_pos].sum(dim=-1)\n"
+            f"            ent = _values_entropy_normalized(values) * 100\n"
+            f"            results.append(((layer, head), pct, ent))\n"
+            f"    results.sort(key=lambda x: x[1], reverse=True)\n"
+            f"    lines = [\"| Head | {from_name} → {to_name} % | Entropy % |\", \"|------|-------|-------|\"]  \n"
+            f"    for (l, h), pct, ent in results:\n"
+            f"        lines.append(f\"| L{{l}}H{{h}} | {{pct:.2f}}% | {{ent:.2f}}% |\")\n"
+            f"    display(Markdown(\"\\n\".join(lines)))"
+        ),
+    ]
+
+    # Show top 3 heads with attention pattern visualization
+    cells.append(md_cell("## Top Heads"))
+    cells.append(
+        code_cell(
+            f"if from_pos and to_pos:\n"
+            f"    for (l, h), pct, ent in results[:3]:\n"
+            f"        display(Markdown(f\"---\\n### L{{l}}H{{h}} — {{pct:.2f}}% (ent {{ent:.2f}}%)\"))\n"
+            f"        show_head_pattern(str_tokens, cache, layer=l, head=h)\n"
+            f"        attention = get_attention_pattern(cache, layer=l, head=h)\n"
+            f"        show_attention_tables(str_tokens, attention, top_k=15)"
+        )
+    )
+
+    filename = f"{from_type}_to_{to_type}.ipynb"
+    write_notebook(CROSS_DIR / filename, make_notebook(cells))
+
+
 MAIN_SETUP_CODE = """\
 from IPython.display import display, Markdown, HTML
 import circuitsvis as cv
@@ -277,9 +348,10 @@ init_notebook_mode(all_interactive=True)
 from shared import (
     load_model, run_and_cache, get_attention_pattern,
     show_head_pattern, show_attention_tables,
-    compute_all_type_metrics,
+    compute_all_type_metrics, compute_cross_type_metrics,
     HEAD_CLASSIFICATIONS, HEAD_TYPES, TYPE_ENTROPY_KEYS,
     TYPE_TO_HEADS, ACTIVITY_LABELS, ACTIVITY_ORDER,
+    CROSS_TYPE_NAMES,
     get_head_types, TEXT,
 )"""
 
@@ -456,6 +528,57 @@ fig.update_layout(
 )
 fig.show()"""
 
+CROSS_HEATMAP_CODE = """\
+import plotly.graph_objects as go
+import numpy as np
+
+ctm = compute_cross_type_metrics(cache, str_tokens)
+
+type_keys = list(CROSS_TYPE_NAMES.keys())
+type_labels = [CROSS_TYPE_NAMES[k] for k in type_keys]
+n_types = len(type_keys)
+
+# Average cross-type attention across all 24 heads
+z = np.zeros((n_types, n_types))
+for i, from_type in enumerate(type_keys):
+    for j, to_type in enumerate(type_keys):
+        key = f"{from_type}_to_{to_type}"
+        vals = [ctm.get((key, l, h), 0) for l in range(2) for h in range(12)]
+        z[i, j] = np.mean(vals)
+
+text_matrix = [[f"{z[i,j]:.1f}" for j in range(n_types)] for i in range(n_types)]
+
+fig = go.Figure(data=go.Heatmap(
+    z=z,
+    x=type_labels,
+    y=type_labels,
+    colorscale=[
+        [0, "#f8f8f8"],
+        [0.01, "#fff5f0"],
+        [0.1, "#fde0dd"],
+        [0.25, "#fa9fb5"],
+        [0.4, "#f768a1"],
+        [0.6, "#c51b8a"],
+        [0.8, "#7a0177"],
+        [1.0, "#49006a"],
+    ],
+    zmin=0,
+    zmax=max(z.max(), 1),
+    text=text_matrix,
+    texttemplate="%{text}",
+    hovertemplate="From: %{y}<br>To: %{x}<br>Avg attention: %{z:.2f}%<extra></extra>",
+))
+
+fig.update_layout(
+    title="Cross-Type Attention Matrix (avg % across all 24 heads)",
+    xaxis_title="To (source type)",
+    yaxis_title="From (querying type)",
+    height=700,
+    width=800,
+    yaxis=dict(autorange="reversed"),
+)
+fig.show()"""
+
 LAYER_COMPARISON_CODE = """\
 # Count type assignments per layer
 from collections import Counter
@@ -541,6 +664,14 @@ def generate_main_notebook() -> None:
         ),
         code_cell(HEATMAP_CODE),
         md_cell(
+            "### Cross-Type Attention Matrix\n"
+            "\n"
+            "Average attention from one word type to another across all 24 heads. "
+            "Rows = querying (from) type, columns = source (to) type. "
+            "See `cross/` for per-pair notebooks."
+        ),
+        code_cell(CROSS_HEATMAP_CODE),
+        md_cell(
             "### Layer-Level Observations\n"
             "\n"
             "Summary of functional differences between Layer 0 and Layer 1 heads."
@@ -567,8 +698,16 @@ def main():
     for type_id in HEAD_TYPES:
         generate_type_notebook(type_id)
 
+    print("\nGenerating cross-type notebooks...")
+    cross_types = list(CROSS_TYPE_NAMES.keys())
+    for from_type in cross_types:
+        for to_type in cross_types:
+            generate_cross_notebook(from_type, to_type)
+    n_cross = len(cross_types) ** 2
+
     print(
-        f"\nDone! Generated main notebook, 24 head notebooks, and {len(HEAD_TYPES)} type notebooks."
+        f"\nDone! Generated main notebook, 24 head notebooks, "
+        f"{len(HEAD_TYPES)} type notebooks, and {n_cross} cross-type notebooks."
     )
 
 

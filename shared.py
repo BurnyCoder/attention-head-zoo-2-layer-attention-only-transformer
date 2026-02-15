@@ -762,6 +762,78 @@ def compute_all_type_metrics(
     return result
 
 
+# === Cross-type attention metrics ===
+
+CROSS_TYPE_NAMES: dict[str, str] = {
+    "eot": "EOT",
+    "comma": "Comma",
+    "period": "Period",
+    "noun": "Noun",
+    "verb": "Verb",
+    "adjective": "Adjective",
+    "adverb": "Adverb",
+    "pronoun": "Pronoun",
+    "preposition": "Preposition",
+    "determiner": "Determiner",
+    "conjunction": "Conjunction",
+    "salient": "Salient",
+    "ai": "AI",
+    "spooky": "Spooky",
+    "glue": "Glue",
+}
+
+
+def get_type_positions(str_tokens: list[str]) -> dict[str, list[int]]:
+    """Get token positions for all cross-type categories.
+
+    Returns dict mapping short type name -> list of token positions.
+    """
+    pos_positions = _get_pos_positions(str_tokens)
+    result: dict[str, list[int]] = {
+        "eot": [0],
+        "comma": [i for i, tok in enumerate(str_tokens) if "," in tok],
+        "period": [i for i, tok in enumerate(str_tokens) if "." in tok],
+        "salient": _get_word_set_positions(str_tokens, SALIENT_WORDS),
+        "ai": _get_word_set_positions(str_tokens, AI_WORDS),
+        "spooky": _get_word_set_positions(str_tokens, SPOOKY_WORDS),
+        "glue": _get_word_set_positions(str_tokens, GLUE_WORDS),
+    }
+    result.update(pos_positions)
+    return result
+
+
+def compute_cross_type_metrics(
+    cache: ActivationCache,
+    str_tokens: list[str],
+    n_layers: int = 2,
+    n_heads: int = 12,
+) -> dict[tuple[str, int, int], float]:
+    """Compute cross-type attention metrics for all type pairs and heads.
+
+    Returns dict mapping (cross_key, layer, head) -> pct.
+    cross_key is "{from}_to_{to}" for pct, "{from}_to_{to}_entropy" for entropy.
+    """
+    type_positions = get_type_positions(str_tokens)
+    result: dict[tuple[str, int, int], float] = {}
+
+    for layer in range(n_layers):
+        for head in range(n_heads):
+            a = get_attention_pattern(cache, layer, head)
+            for from_type, dest_pos in type_positions.items():
+                if not dest_pos:
+                    continue
+                for to_type, src_pos in type_positions.items():
+                    if not src_pos:
+                        continue
+                    key = f"{from_type}_to_{to_type}"
+                    pct = a[dest_pos][:, src_pos].sum(dim=-1).mean().item() * 100
+                    result[(key, layer, head)] = pct
+                    values = a[dest_pos][:, src_pos].sum(dim=-1)
+                    ent = _values_entropy_normalized(values) * 100
+                    result[(f"{key}_entropy", layer, head)] = ent
+    return result
+
+
 # === Visualization ===
 def show_head_pattern(
     str_tokens: list[str],
