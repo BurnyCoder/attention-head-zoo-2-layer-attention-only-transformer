@@ -87,3 +87,4 @@ Run any notebook with the `.venv` Python kernel. To regenerate the head/type not
 - See if its attending from some subset of semantically meaningful tokens to some subset of semantically meaningful tokens 
 - Better summary statistics of cross types
 - Write paper
+- Ablations
